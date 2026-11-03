@@ -11,7 +11,8 @@
     "dist:current": "electron-builder && node scripts/prepare-client.js current",
     "release:stage": "node scripts/prepare-update-manifest.js",
     "release:manifest": "node scripts/prepare-update-manifest.js",
-    "build:ui-manifest": "node scripts/build-ui-manifest.js"
+    "build:ui-manifest": "node scripts/build-ui-manifest.js",
+    "verify:live": "node scripts/verify-live-update.js"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -32,7 +33,8 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "The-Smart-POS-Setup-${version}.${ext}"
+      "artifactName": "The-Smart-POS-Setup-${version}.${ext}",
+      "signAndEditExecutable": false
     },
     "mac": {
       "target": [
