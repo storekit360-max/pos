@@ -1,0 +1,55 @@
+{
+  "name": "the-smart-pos",
+  "version": "1.4.0",
+  "description": "The Smart - POS & Inventory for mobile phone and accessories shop",
+  "main": "main.js",
+  "scripts": {
+    "start": "node launch.js",
+    "dist:win": "electron-builder --win nsis --x64 && node scripts/prepare-client.js win",
+    "dist:mac": "electron-builder --mac dmg zip --arm64 && electron-builder --mac dmg zip --x64 && node scripts/prepare-client.js mac",
+    "dist:mac:x64": "electron-builder --mac dmg zip --x64 && node scripts/prepare-client.js mac-x64",
+    "dist:current": "electron-builder && node scripts/prepare-client.js current",
+    "release:stage": "node scripts/prepare-update-manifest.js",
+    "release:manifest": "node scripts/prepare-update-manifest.js",
+    "build:ui-manifest": "node scripts/build-ui-manifest.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-reload": "^2.0.0-alpha.1"
+  },
+  "build": {
+    "appId": "lk.thesmart.pos",
+    "productName": "The Smart POS",
+    "files": [
+      "main.js",
+      "preload.js",
+      "customer-preload.js",
+      "updater.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "The-Smart-POS-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "The-Smart-POS-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
+    }
+  },
+  "uiMinShell": "1.4.0"
+}

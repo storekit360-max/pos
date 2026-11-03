@@ -1,0 +1,23 @@
+# Dependencies and generated installers
+node_modules/
+dist/
+client-ready/
+client/
+The-Smart-POS-Client/
+The-Smart-POS-Client.zip
+
+# Private license inventory
+/LICENSE-KEYS-PRIVATE.md
+
+# Local operating system files
+.DS_Store
+
+# Runtime data and logs
+/data.json
+*.log
+
+# Generated client release packages
+The-Smart-POS-Client-*.zip
+/public/updates/*.exe
+/public/updates/*.dmg
+/public/updates/*.zip

@@ -1,0 +1,20 @@
+{
+  "buildCommand": "cp -R renderer/. public/ && node scripts/build-ui-manifest.js",
+  "installCommand": "",
+  "outputDirectory": "public",
+  "headers": [
+    {
+      "source": "/updates/latest.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/json; charset=utf-8"
+        }
+      ]
+    }
+  ]
+}

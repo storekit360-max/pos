@@ -1,0 +1,6 @@
+# Keep line endings identical on Windows and Mac so UI file fingerprints match the live server.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
