@@ -89,6 +89,7 @@ function validateUi(ui) {
 function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request, compareVersions }) {
   const activeFile = path.join(stateDir, 'active.json');
   const pendingFile = path.join(stateDir, 'pending.json');
+  const historyFile = path.join(stateDir, 'history.json');
   let bundledTree = null;
   let resolved = null;
   let busy = false;
@@ -109,7 +110,7 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
         if (buf.length !== f.size || sha256(buf) !== f.sha256) return null;
       }
       if (!info.files.some(f => f.path === 'index.html')) return null;
-      return { dir, revision: info.revision, files: info.files };
+      return { dir, revision: info.revision, notes: String(info.notes || ''), files: info.files };
     } catch { return null; }
   }
 
@@ -130,7 +131,10 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
     const pending = readJson(pendingFile);
     if (!pending) return;
     const bundle = loadBundle(pending);
-    if (bundle) writeJsonAtomic(activeFile, { revision: bundle.revision, dir: pending.dir, shell: shellVersion, activatedAt: Date.now(), attempts: 0, confirmed: false });
+    if (bundle) {
+      const activatedAt = Date.now();
+      writeJsonAtomic(activeFile, { revision: bundle.revision, dir: pending.dir, shell: shellVersion, activatedAt, attempts: 0, confirmed: false });
+    }
     fs.rmSync(pendingFile, { force: true });
     cleanup();
   }
@@ -158,7 +162,16 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
   }
   function confirmBoot() {
     const active = readJson(activeFile);
-    if (active && resolved && resolved.source === 'live' && active.revision === resolved.revision && !active.confirmed) writeJsonAtomic(activeFile, { ...active, confirmed: true, attempts: 0 });
+    if (active && resolved && resolved.source === 'live' && active.revision === resolved.revision) {
+      if (!active.confirmed) writeJsonAtomic(activeFile, { ...active, confirmed: true, attempts: 0 });
+      const bundle = loadBundle(active);
+      const history = readJson(historyFile);
+      const entries = Array.isArray(history) ? history : [];
+      if (bundle && !entries.some(entry => entry.revision === bundle.revision && entry.shell === shellVersion)) {
+        entries.unshift({ revision: bundle.revision, shell: shellVersion, activatedAt: active.activatedAt || Date.now(), notes: bundle.notes });
+        writeJsonAtomic(historyFile, entries.slice(0, 50));
+      }
+    }
   }
   function currentRevision() {
     const r = resolveRendererDir();
@@ -231,7 +244,7 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
         fs.writeFileSync(dest, buf);
         downloaded++; bytes += buf.length;
       }
-      writeJsonAtomic(path.join(tmp, 'bundle.json'), { revision: v.revision, shell: shellVersion, files: v.files, createdAt: Date.now() });
+      writeJsonAtomic(path.join(tmp, 'bundle.json'), { revision: v.revision, shell: shellVersion, notes: v.notes, files: v.files, createdAt: Date.now() });
       fs.renameSync(tmp, finalDir); tmp = '';
       const meta = { revision: v.revision, dir: dirName, shell: shellVersion };
       if (!loadBundle(meta)) throw new Error('The downloaded UI bundle could not be verified');
@@ -250,7 +263,7 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
     return resolveRendererDir();
   }
 
-  return { resolveRendererDir, currentRevision, evaluate, download, apply, discardActive, confirmBoot, bundledRevision, hasPending: () => !!readJson(pendingFile) };
+  return { resolveRendererDir, currentRevision, evaluate, download, apply, discardActive, confirmBoot, bundledRevision, history: () => { const entries = readJson(historyFile); return Array.isArray(entries) ? entries : []; }, hasPending: () => !!readJson(pendingFile) };
 }
 
 module.exports = { createUiUpdater, hashTree, revisionOf, validateUi, safeRel, sha256 };

@@ -17,8 +17,6 @@
   const manifestUrl = () => { try { return (S().updateManifestUrl || '').trim() || DEFAULT_URL; } catch { return DEFAULT_URL; } };
   const canManage = () => typeof me !== 'undefined' && me && ['owner', 'manager'].includes(me.role);
   const signedIn = () => typeof me !== 'undefined' && !!me;
-  const appliedKey = 'posUiApplied';
-  const alreadyApplied = rev => { try { return sessionStorage.getItem(appliedKey) === rev; } catch { return false; } };
 
   // ---- core check -----------------------------------------------------------------------
   async function check() {
@@ -34,7 +32,7 @@
       state.ui = r.ui || null;
       state.notes = (r.ui && r.ui.notes) || '';
       if (r.ui && r.ui.ready) state.uiReady = true;
-      else if (r.ui && r.ui.available && !alreadyApplied(r.ui.revision) && api.downloadUiUpdate) {
+      else if (r.ui && r.ui.available && api.downloadUiUpdate) {
         const d = await api.downloadUiUpdate(manifestUrl());
         if (d.ok) state.uiReady = true; else state.uiError = d.error || 'Download failed';
       }
@@ -47,7 +45,6 @@
   async function applyNow() {
     if (!state.uiReady) return;
     try { if (typeof flush === 'function') await flush(); } catch { /* data is saved on every change */ }
-    try { if (state.ui && state.ui.revision) sessionStorage.setItem(appliedKey, state.ui.revision); } catch { /* ignore */ }
     state.uiReady = false;
     const r = await api.applyUiUpdate();
     if (!r || !r.ok) toast('Update could not be applied: ' + ((r && r.error) || 'unknown error'), 'err');
@@ -80,6 +77,12 @@
     try { info = (api && api.updateStatus && await api.updateStatus()) || {}; } catch { /* ignore */ }
     const lines = [];
     if (info.shellVersion) lines.push(`Installed app <b>v${esc(info.shellVersion)}</b> · screens <b>${esc(info.uiRevision || '')}</b> (${info.uiSource === 'live' ? 'updated live' : 'from installer'})`);
+    if (Array.isArray(info.uiHistory) && info.uiHistory.length) {
+      lines.push(`<br><b>Applied screen updates</b><br>${info.uiHistory.slice(0, 10).map(entry => {
+        const date = entry.activatedAt ? new Date(entry.activatedAt).toLocaleString() : 'Date unavailable';
+        return `<span class="mut">${esc(date)} · ${esc(entry.revision)}${entry.notes ? ` · ${esc(entry.notes)}` : ''}</span>`;
+      }).join('<br>')}`);
+    }
     const r = state.lastResult;
     if (r && !r.ok) lines.push(`<span style="color:var(--bad)">Last check failed: ${esc(r.error)}</span>`);
     else if (r) {

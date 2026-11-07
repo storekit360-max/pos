@@ -380,7 +380,8 @@ ipcMain.handle('update:check', async (_event, manifestUrl) => {
 });
 ipcMain.handle('update:status', () => ({
   shellVersion: app.getVersion(), platform: updatePlatform(),
-  uiRevision: uiUpdater.currentRevision(), uiSource: uiUpdater.resolveRendererDir().source
+  uiRevision: uiUpdater.currentRevision(), uiSource: uiUpdater.resolveRendererDir().source,
+  uiHistory: uiUpdater.history()
 }));
 ipcMain.handle('update:ui:download', async (_event, manifestUrl) => {
   try {
@@ -389,7 +390,13 @@ ipcMain.handle('update:ui:download', async (_event, manifestUrl) => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('update:ui:apply', () => {
-  try { const r = uiUpdater.apply(); reloadWindows(); return { ok: true, revision: r.revision }; }
+  try {
+    const r = uiUpdater.apply();
+    if (r.source !== 'live') throw new Error('The downloaded screens could not be activated');
+    app.relaunch();
+    app.quit();
+    return { ok: true, revision: r.revision, restarting: true };
+  }
   catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('update:ui:ok', () => { uiUpdater.confirmBoot(); return true; });

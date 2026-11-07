@@ -110,7 +110,7 @@ Current policy: `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src '
 - `fetch()` to another website is blocked. If a feature really needs an online API (SMS, cloud sync, payment), either call it from the main process (shell change) or add the specific host to `connect-src` in `index.html` (a screens change) — and handle failure when offline.
 
 ### 3.5 Don't lose a cashier's work
-- Applying a screen update reloads the window; an unsaved cart in memory is lost. That is why the update applies automatically **only at the login screen**, and signed-in users see a banner. Don't add code that reloads the page on its own.
+- Applying a screen update restarts the app so the verified bundle is promoted on startup. An unsaved cart in memory is lost. That is why the update applies automatically **only at the login screen**, and signed-in users see a banner. Applied update history is recorded after the new screens successfully boot.
 - Never add `location.reload()` loops in boot code. The updater already has a per-session guard against apply loops.
 
 ### 3.6 Boot must never throw
