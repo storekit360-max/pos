@@ -199,7 +199,7 @@ A.completeSale = () => {
     else p.stock -= i.qty;
     move(p, -i.qty, 'sale', s.no); }
   if (c && due > 0) c.balance = r2((c.balance || 0) + due);
-  db.sales.push(s); log('sale', s.no + ' ' + money(s.total)); save();
+  db.sales.push(s); const sourceQuote = db.quotations?.find(q => q.status === 'accepted' && q.customerId === s.customerId && q.items.length === s.items.length && q.items.every((qi, n) => qi.pid === s.items[n].pid && num(qi.qty) === num(s.items[n].qty) && r2(Math.max(num(prod(qi.pid)?.price) - num(qi.price), 0) * num(qi.qty)) === r2(num(s.items[n].disc)))); if (sourceQuote) { sourceQuote.status = 'converted'; sourceQuote.saleId = s.id; sourceQuote.convertedAt = s.at; } log('sale', s.no + ' ' + money(s.total)); save();
   cart = []; ps.a1 = ps.a2 = ''; ps.m2 = ''; ps.dVal = 0; ps.cust = ''; ps.customerReady = false; ps.phonePadOpen = false; ps.customerPhone = ''; ps.customerName = ''; ps.customerMessage = '';
   showReceipt(s); P.pos();
 };
