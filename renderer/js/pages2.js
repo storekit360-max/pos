@@ -185,6 +185,16 @@ function attendanceRecord(userId, day) {
   if (!a) { a = { id: uid(), userId, day, status: 'present', checkIn: '', checkOut: '', note: '', createdAt: nowISO() }; db.attendance.push(a); }
   return a;
 }
+function attendanceSelfAction() {
+  const a = me?.id && db.attendance.find(x => x.userId === me.id && x.day === ymd());
+  if (!a?.checkIn) return 'Check in';
+  if (!a.checkOut) return 'Check out';
+  return 'Attendance recorded';
+}
+function attendanceSelfButton() {
+  const action = attendanceSelfAction();
+  return `<button class="btn btn-p" data-act="attendanceSelf" ${action === 'Attendance recorded' ? 'disabled' : ''}>${action === 'Attendance recorded' ? '✓ ' : '⏱ '}${action}</button>`;
+}
 function saveAttendance(a, detail) {
   a.hours = attendanceHours(a); a.late = attendanceLate(a); a.updatedAt = nowISO(); a.updatedBy = me.name;
   log('attendance', detail); save();
@@ -197,7 +207,7 @@ P.attendance = () => {
   const statusSelect = a => `<select data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(a?.userId || '')}" data-key="status" ${locked ? 'disabled' : ''}><option value="" ${!a ? 'selected' : ''}>Not marked</option>${[['present','Present'],['absent','Absent'],['leave','Leave'],['half','Half day']].map(([v,l]) => `<option value="${v}" ${a?.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const locked = date !== day;
   const summary = `<div class="filters"><label class="mut">Month <input id="attendanceMonth" type="month" value="${esc(date.slice(0,7))}" data-in="attendanceMonth"></label><button class="btn" data-act="attendanceCSV">Export monthly CSV</button></div>${attendanceMonthSummary(date.slice(0,7))}`;
-  view(`${hdr('Attendance', '')}<div class="filters"><label class="mut">Date <input id="attendanceDate" type="date" value="${esc(date)}" data-in="attendanceDate"></label><button class="btn" data-act="attendanceToday">Today</button><span class="sp"></span><span class="badge b-ok">Present ${counts.present}</span><span class="badge b-bad">Absent ${counts.absent}</span><span class="badge b-warn">Leave ${counts.leave}</span><span class="badge">Half day ${counts.half}</span><span class="badge">Not marked ${counts.unmarked}</span></div><div class="card"><p class="mut">Mark active staff attendance. Viewing a date does not create or change records. ${locked ? 'Past dates are read-only.' : 'Entries are saved on this device and available offline.'}</p>${tbl(['Staff member','Status','Check in','Check out','Hours','Late','Notes'], rows.map(([u,a]) => `<tr><td><b>${esc(u.name)}</b><br><small class="mut">${esc(u.role)}</small></td><td>${statusSelect(a)}</td><td><input aria-label="${esc(u.name)} check-in" type="time" data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(u.id)}" data-key="checkIn" value="${esc(a?.checkIn || '')}" ${locked?'disabled':''}></td><td><input aria-label="${esc(u.name)} check-out" type="time" data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(u.id)}" data-key="checkOut" value="${esc(a?.checkOut || '')}" ${locked?'disabled':''}></td><td>${a ? attendanceHours(a).toFixed(2) : '—'}</td><td>${a ? (attendanceLate(a) ? 'Yes' : 'No') : '—'}</td><td><input aria-label="${esc(u.name)} attendance notes" data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(u.id)}" data-key="note" value="${esc(a?.note || '')}" placeholder="Optional note" ${locked?'disabled':''}></td></tr>`), 'No active staff users')}</div><h3>Monthly summary</h3>${summary}`);
+  view(`${hdr('Attendance', attendanceSelfButton())}<div class="filters"><label class="mut">Date <input id="attendanceDate" type="date" value="${esc(date)}" data-in="attendanceDate"></label><button class="btn" data-act="attendanceToday">Today</button><span class="sp"></span><span class="badge b-ok">Present ${counts.present}</span><span class="badge b-bad">Absent ${counts.absent}</span><span class="badge b-warn">Leave ${counts.leave}</span><span class="badge">Half day ${counts.half}</span><span class="badge">Not marked ${counts.unmarked}</span></div><div class="card"><p class="mut">Mark active staff attendance. Viewing a date does not create or change records. ${locked ? 'Past dates are read-only.' : 'Entries are saved on this device and available offline.'}</p>${tbl(['Staff member','Status','Check in','Check out','Hours','Late','Notes'], rows.map(([u,a]) => `<tr><td><b>${esc(u.name)}</b><br><small class="mut">${esc(u.role)}</small></td><td>${statusSelect(a)}</td><td><input aria-label="${esc(u.name)} check-in" type="time" data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(u.id)}" data-key="checkIn" value="${esc(a?.checkIn || '')}" ${locked?'disabled':''}></td><td><input aria-label="${esc(u.name)} check-out" type="time" data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(u.id)}" data-key="checkOut" value="${esc(a?.checkOut || '')}" ${locked?'disabled':''}></td><td>${a ? attendanceHours(a).toFixed(2) : '—'}</td><td>${a ? (attendanceLate(a) ? 'Yes' : 'No') : '—'}</td><td><input aria-label="${esc(u.name)} attendance notes" data-in="attendanceField" data-id="${esc(a?.id || '')}" data-user="${esc(u.id)}" data-key="note" value="${esc(a?.note || '')}" placeholder="Optional note" ${locked?'disabled':''}></td></tr>`), 'No active staff users')}</div><h3>Monthly summary</h3>${summary}`);
 };
 function attendanceMonthSummary(month) {
   const users = db.users.filter(u => u.active);
@@ -226,10 +236,16 @@ A.attendanceToday = () => { if ($('#attendanceDate')) $('#attendanceDate').value
 A.attendanceCSV = () => { if (!attendanceManager()) return toast('Only owners and managers can export attendance', 'err'); const month = $('#attendanceMonth')?.value || ($('#attendanceDate')?.value || ymd()).slice(0,7); const rows = db.attendance.filter(a => String(a.day || '').slice(0,7) === month).map(a => { const u = db.users.find(x => x.id === a.userId); return [u?.name || 'Deleted user', u?.role || '', a.day, a.status || '', a.checkIn || '', a.checkOut || '', attendanceHours(a) || 0, attendanceLate(a) ? 'yes' : 'no', a.note || '']; }); download(`attendance_${month}.csv`, toCSV([['Staff member','Role','Date','Status','Check in','Check out','Hours','Late','Notes'], ...rows])); };
 A.attendanceSelf = () => {
   if (!me?.id) return;
-  const day = ymd(), a = attendanceRecord(me.id, day), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const day = ymd(), existing = db.attendance.find(x => x.userId === me.id && x.day === day);
+  if (existing?.checkIn && existing?.checkOut) return toast(`Today's attendance is already recorded (${existing.checkIn}–${existing.checkOut})`);
+  const a = attendanceRecord(me.id, day), now = new Date(), time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   if (!a.checkIn) { a.checkIn = time; a.status = 'present'; saveAttendance(a, `${me.name} · ${day} · check in`); toast(`Checked in at ${time}`); }
   else if (!a.checkOut) { a.checkOut = time; saveAttendance(a, `${me.name} · ${day} · check out`); toast(`Checked out at ${time}`); }
-  else toast(`Today's check-in/out is already recorded (${a.checkIn}–${a.checkOut})`);
+  document.querySelectorAll('[data-act="attendanceSelf"]').forEach(button => {
+    const action = attendanceSelfAction(); button.textContent = action === 'Attendance recorded' ? 'Attendance recorded' : action;
+    button.disabled = action === 'Attendance recorded';
+  });
+  if (current === 'attendance' && attendanceManager()) P.attendance();
 };
 
 /* ================= USERS ================= */
