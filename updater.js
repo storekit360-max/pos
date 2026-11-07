@@ -259,8 +259,13 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
 
   // Make the pending bundle the active one. The caller reloads its windows afterwards.
   function apply() {
-    resolved = null;
-    return resolveRendererDir();
+    // Do not promote or cache the pending bundle in the process that is about
+    // to exit. Startup is the single place that promotes pending -> active.
+    // This avoids a relaunch racing the old process's in-memory resolution.
+    const pending = readJson(pendingFile);
+    const bundle = loadBundle(pending);
+    if (!bundle) throw new Error('The downloaded screens could not be verified');
+    return { dir: bundle.dir, source: 'live', revision: bundle.revision };
   }
 
   return { resolveRendererDir, currentRevision, evaluate, download, apply, discardActive, confirmBoot, bundledRevision, history: () => { const entries = readJson(historyFile); return Array.isArray(entries) ? entries : []; }, hasPending: () => !!readJson(pendingFile) };

@@ -142,7 +142,7 @@
   }
   function start() {
     if (!api || !api.checkUpdate) return;
-    if (api.uiBootOk) api.uiBootOk(); // tells the app these screens started fine (crash-loop guard)
+    // app.js calls this only after database, license and initial screen boot all succeed.
     setTimeout(autoCheck, 8000);
     setInterval(autoCheck, CHECK_EVERY_MS);
     window.addEventListener('online', () => setTimeout(autoCheck, 3000));

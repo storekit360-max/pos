@@ -106,6 +106,9 @@ document.addEventListener('keydown', e => {
   else if (!db.users.length) setupScreen(); else loginScreen();
   if (window.posApi) setInterval(() => { if (me) refreshLicense(); }, 30000);
   window.updateUi?.start();
+  // Confirm the selected screens only after app initialization and initial
+  // login/setup/license rendering have completed successfully.
+  if (window.posApi?.uiBootOk) await window.posApi.uiBootOk();
 })().catch(err => {
   console.error('Application startup failed:', err);
   const root = document.querySelector('#app');
