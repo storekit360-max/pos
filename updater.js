@@ -157,7 +157,10 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
         writeJsonAtomic(activeFile, { ...active, attempts });
         resolved = { dir: bundle.dir, source: 'live', revision: bundle.revision };
       }
-    } catch (e) { console.error('Live UI bundle ignored:', e.message); resolved = { dir: bundledDir, source: 'bundled', revision: null }; }
+    } catch (e) {
+      console.error('Live UI bundle ignored:', e.message);
+      resolved = { dir: bundledDir, source: 'bundled', revision: null };
+    }
     return resolved;
   }
   function confirmBoot() {
@@ -257,7 +260,8 @@ function createUiUpdater({ stateDir, bundledDir, shellVersion, packaged, request
     }
   }
 
-  // Make the pending bundle the active one. The caller reloads its windows afterwards.
+  // Validate the pending bundle before the caller requests a full app restart.
+  // Promotion happens only in a fresh process during resolveRendererDir().
   function apply() {
     // Do not promote or cache the pending bundle in the process that is about
     // to exit. Startup is the single place that promotes pending -> active.

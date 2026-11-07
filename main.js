@@ -393,7 +393,19 @@ ipcMain.handle('update:ui:apply', () => {
   try {
     const r = uiUpdater.apply();
     if (r.source !== 'live') throw new Error('The downloaded screens could not be activated');
-    app.relaunch();
+    // On Windows/macOS app.relaunch() may start the replacement before this
+    // process releases the single-instance lock. Start a tiny detached
+    // handoff instead: it waits for this PID to exit, then launches the app.
+    // The new process promotes pending.json during its normal startup path.
+    if (process.platform === 'win32') {
+      const script = path.join(app.getPath('temp'), `TheSmartPOS-relaunch-${process.pid}.cmd`);
+      fs.writeFileSync(script, `@echo off\r\n:wait\r\ntasklist /FI "PID eq ${process.pid}" 2>NUL | find "${process.pid}" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\nstart "" "${process.execPath}"\r\ndel "%~f0"\r\n`);
+      spawn('cmd.exe', ['/d', '/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    } else {
+      const script = path.join(app.getPath('temp'), `TheSmartPOS-relaunch-${process.pid}.sh`);
+      fs.writeFileSync(script, `#!/bin/sh\nwhile kill -0 ${process.pid} 2>/dev/null; do sleep 1; done\nexec ${shQuote(process.execPath)}\n`, { mode: 0o700 });
+      spawn('/bin/sh', [script], { detached: true, stdio: 'ignore' }).unref();
+    }
     app.quit();
     return { ok: true, revision: r.revision, restarting: true };
   }
