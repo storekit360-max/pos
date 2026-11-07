@@ -344,69 +344,380 @@ P.invoice = () => {
   refreshInvoicePreview();
 };
 
-/* ================= QUOTATIONS ================= */
+/* ================= QUOTATIONS & INVOICE DOCUMENTS ================= */
+/* Editor (left) + live A4 preview (right), Print and Download PDF.
+   Records stay in db.quotations. The record shape is additive, so older quotations and invoice documents open unchanged. */
 let qf = { q: '' };
+let qe = null;                         // open editor: { d: working copy, rec: saved record or null, isNew, drafts, dirty, busy }
 const quoteTotal = q => r2((q.items || []).reduce((sum, i) => sum + num(i.qty) * num(i.price), 0));
 const quoteOriginalTotal = q => r2((q.items || []).reduce((sum, i) => sum + num(i.qty) * num(i.regularPrice ?? i.price), 0));
 const quoteDiscountTotal = q => r2(quoteOriginalTotal(q) - quoteTotal(q));
+
+const qm = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const qdNl = v => esc(v).replace(/\n/g, '<br>');
+const qdLines = v => String(v || '').split('\n').filter(x => x.trim());
+const qdDate = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v || ''); };
+const qdPeekNo = type => (type === 'invoice' ? 'INV-' : 'QT-') + String((db.counters.quote || 0) + 1).padStart(6, '0');
+const qdFileName = d => `${d.type === 'invoice' ? 'Invoice' : 'Quotation'}_${String(d.no || 'document').replace(/[^\w-]/g, '')}`;
+const QE_COMPANY = ['companyName', 'companyTagline', 'companyAddress', 'companyPhone', 'companyEmail', 'companySub', 'companyFootTag', 'signName'];
+
+/* ---- icons used inside the document ---- */
+const QD_SVG = {
+  pin: '<svg viewBox="0 0 26 26"><path fill="#0a4aa8" d="M13 1C8 1 4.5 4.700 4.500 9.500 4.500 15.500 13 25 13 25s8.500-9.500 8.500-15.500C21.500 4.700 18 1 13 1zm0 12a3.500 3.500 0 110-7 3.500 3.500 0 010 7z"/></svg>',
+  tel: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#0a4aa8"/><path fill="#fff" d="M8 6.500l2.500-.5 1.500 3.500-1.700 1.300a9 9 0 004.400 4.400l1.300-1.700 3.500 1.500-.5 2.500c-.2.800-.9 1.200-1.700 1.100C10.500 18 8 13.500 6.900 8.200 6.800 7.400 7.200 6.700 8 6.500z"/></svg>',
+  mail: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#0a4aa8"/><path fill="#fff" d="M6 8h14v10H6z"/><path fill="none" stroke="#0a4aa8" stroke-width="1.500" d="M6 8.500l7 5.500 7-5.500"/></svg>',
+  ftpin: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#2a78e4"/><path fill="#fff" d="M13 5.500c-3 0-5 2.100-5 5 0 3.700 5 9 5 9s5-5.300 5-9c0-2.900-2-5-5-5zm0 6.800a1.800 1.800 0 110-3.600 1.800 1.800 0 010 3.600z"/></svg>',
+  ftel: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#2a78e4"/><path fill="#fff" d="M8 6.500l2.500-.5 1.500 3.500-1.700 1.300a9 9 0 004.400 4.400l1.300-1.700 3.500 1.500-.5 2.500c-.2.800-.9 1.200-1.700 1.100C10.500 18 8 13.500 6.900 8.200 6.800 7.400 7.200 6.700 8 6.500z"/></svg>',
+  fmail: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#2a78e4"/><path fill="#fff" d="M6 8h14v10H6z"/><path fill="none" stroke="#2a78e4" stroke-width="1.500" d="M6 8.500l7 5.500 7-5.500"/></svg>',
+  doc: '<svg width="26" height="26" viewBox="0 0 26 26"><rect x="4" y="1" width="18" height="24" rx="3" fill="#fff" stroke="#0a4aa8" stroke-width="2"/><path stroke="#0a4aa8" stroke-width="2" d="M8 9h10M8 14h10M8 19h7"/></svg>',
+  bank: '<svg width="26" height="26" viewBox="0 0 26 26"><path fill="#0a4aa8" d="M13 2l11 5v2H2V7zM4 11h3v9H4zm5 0h3v9H9zm5 0h3v9h-3zm5 0h3v9h-3zM2 21h22v3H2z"/></svg>'
+};
+
+/* ---- document design: A4 at 96 dpi = 794 x 1122 px. The same CSS is used by the preview, Print and PDF. ---- */
+const QD_CSS = `
+.qd{width:794px;height:1122px;background:#fff;position:relative;overflow:hidden;font-family:QDRoboto,Roboto,"Segoe UI",Arial,sans-serif;font-size:16px;font-weight:400;line-height:normal;letter-spacing:normal;text-transform:none;text-align:left;color:#12233f;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.qd *{box-sizing:border-box;margin:0;padding:0}
+.qd table{min-width:0}
+.qd th,.qd td{letter-spacing:normal;text-transform:none;position:static}
+.qd .qd-hd{position:relative;height:173px;background:#fff;overflow:hidden}
+.qd .qd-logo{position:absolute;left:22px;top:14px;width:246px;height:123px;object-fit:contain}
+.qd .qd-logot{display:flex;align-items:center;font-size:30px;line-height:1.1;font-weight:700;color:#0a2d6b;overflow:hidden;word-break:break-word}
+.qd .qd-bulb{position:absolute;right:0;top:0;height:141px}
+.qd .qd-bf{position:absolute;right:0;top:0;width:124px;height:141px;background:linear-gradient(90deg,#082d75 0,rgba(8,45,117,0) 35%),linear-gradient(0deg,#0a3585 0,rgba(10,53,133,0) 30%)}
+.qd .qd-tag{position:absolute;left:434px;top:18px;font-family:QDScript,"Segoe Script","Brush Script MT",cursive;font-size:29px;line-height:24px;color:#dbe8ff;transform:rotate(-3deg)}
+.qd .qd-ttl{position:absolute;left:434px;top:84px;font-size:47px;font-weight:700;color:#fff;letter-spacing:1px;line-height:1}
+.qd .qd-ttl:after{content:"";display:block;margin-top:14px;height:2px;width:336px;background:linear-gradient(90deg,#5aa2ff,transparent)}
+.qd .qd-sub{position:absolute;left:434px;top:149px;font-size:10.6px;color:#fff;letter-spacing:.2px;font-weight:500;white-space:nowrap}
+.qd .qd-info{display:grid;grid-template-columns:262px 1fr 232px;padding:10px 26px 0 28px;height:146px}
+.qd .qd-co{border-right:2px solid #c9d8ee;padding-right:8px;min-width:0}
+.qd .qd-co h2{font-size:22px;color:#0a2d6b;margin-bottom:0;word-break:break-word}
+.qd .qd-ln{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:18px;margin-top:4px}
+.qd .qd-ln svg{flex:0 0 26px;width:26px;height:26px}
+.qd .qd-ln span{padding-top:3px;word-break:break-word}
+.qd .qd-bt{padding-left:14px;min-width:0}
+.qd .qd-bt h3{font-size:18px;color:#0f5ad0;line-height:1}
+.qd .qd-bt h4{font-size:21px;color:#0a2d6b;margin:4px 0 2px;word-break:break-word}
+.qd .qd-bt .qd-ln{font-size:12.6px}
+.qd .qd-meta{align-self:start;margin-top:0;border:1px solid #bcd3f2;width:232px}
+.qd .qd-meta div{display:grid;grid-template-columns:80px 1fr;height:35px;border-bottom:2px solid #bcd3f2;background:#eef5fd;font-size:14.5px}
+.qd .qd-meta div:last-child{border-bottom:0}
+.qd .qd-meta b{background:#0b4a9e;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13.5px;letter-spacing:.3px;font-weight:700}
+.qd .qd-meta span{display:flex;align-items:center;padding-left:14px;font-weight:500;min-width:0;overflow:hidden;white-space:nowrap}
+.qd table.qd-it{width:calc(100% - 52px);margin:0 26px;border-collapse:collapse;table-layout:fixed;font-size:12.6px}
+.qd .qd-it th{background:#0b4a9e;color:#fff;height:40px;font-size:12px;line-height:1.25;border:0;border-right:1px solid #2f66b5;font-weight:700;text-align:center;vertical-align:middle}
+.qd .qd-it th:first-child{width:6.6%}
+.qd .qd-it th.qd-d{text-align:left;padding-left:14px}
+.qd .qd-it td{background:#f5f9fe;border:1px solid #cddff5;text-align:center;height:54px;font-weight:400;padding:2px 6px;vertical-align:middle;color:#12233f}
+.qd .qd-it td.qd-d{text-align:left;padding-left:14px;line-height:1.3;font-size:12px;color:#1a2a44;word-break:break-word}
+.qd .qd-it td.qd-d b{font-weight:700}
+.qd .qd-it td.qd-n{text-align:right;padding-right:14px;font-weight:500}
+.qd .qd-bottom{display:grid;gap:9px;padding:12px 26px 0;align-items:start}
+.qd .qd-tc,.qd .qd-bk{background:#e6f0fc;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.4;min-width:0}
+.qd .qd-bk{border:1px solid #bcd3f2;background:#eef5fd}
+.qd .qd-tc h5,.qd .qd-bk h5{font-size:16px;color:#0a4aa8;margin-bottom:6px;display:flex;align-items:center;gap:6px;font-weight:700}
+.qd .qd-tc ul{padding-left:16px}
+.qd .qd-tc li{margin-bottom:5px;color:#1e3a66}
+.qd .qd-bk b{display:block;color:#0a4aa8;font-size:12.2px;line-height:1.35;font-weight:700}
+.qd .qd-tot{border:1px solid #cddff5;background:#f2f7fe;font-size:12.5px}
+.qd .qd-tot .qd-r{display:flex;justify-content:space-between;align-items:center;height:43px;padding:0 12px;font-weight:700;border-bottom:1px solid #cddff5}
+.qd .qd-tot .qd-g{background:#0b3d91;color:#fff;height:52px;border:0}
+.qd .qd-tot .qd-g em{font-style:normal;font-size:19px}
+.qd .qd-sig{position:absolute;left:36px;bottom:76px;width:190px;font-size:14px;line-height:1.25}
+.qd .qd-sig img{display:block;height:58px;margin-left:8px;object-fit:contain}
+.qd .qd-sig hr{border:0;border-top:1.5px solid #0a4aa8;margin:2px 0 4px}
+.qd .qd-sig b{font-size:16px;display:block;font-weight:700}
+.qd .qd-csig{position:absolute;left:265px;bottom:76px;width:190px;font-size:14px;line-height:1.25}
+.qd .qd-cspace{height:58px}
+.qd .qd-cname{height:20px}
+.qd .qd-csig hr{border:0;border-top:1.5px solid #0a4aa8;margin:2px 0 4px}
+.qd .qd-ty{position:absolute;right:30px;bottom:74px;text-align:center;width:250px}
+.qd .qd-ty i{display:block;font-family:QDScript,"Segoe Script","Brush Script MT",cursive;font-style:normal;font-size:52px;color:#0b3d91;line-height:1;transform:rotate(-4deg)}
+.qd .qd-ty span{display:block;font-size:12.5px;letter-spacing:4px;color:#0a4aa8;font-weight:500;margin-top:6px}
+.qd .qd-ty:after{content:"";display:block;width:64px;height:2px;background:#0a4aa8;margin:8px auto 0}
+.qd .qd-ft{position:absolute;left:0;right:0;bottom:0;height:66px;background:linear-gradient(90deg,#0a4aa8 0,#0b3d91 12%,#082d75);display:flex;align-items:center;gap:22px;padding:0 26px 0 56px;color:#fff;font-size:11.3px}
+.qd .qd-ft .qd-i{display:flex;align-items:center;gap:8px;min-width:0}
+.qd .qd-ft .qd-i svg{width:28px;height:28px;flex:0 0 28px}
+.qd .qd-ft .qd-q{margin-left:auto;border-left:1px solid #5b86c9;padding-left:14px;font-size:9.5px;line-height:1.5;letter-spacing:.2px}
+`;
+const qdFontCss = () => {
+  const f = window.QFONTS; if (!f) return '';
+  const ff = (name, w, data) => data ? `@font-face{font-family:${name};font-weight:${w};src:url(${data}) format("woff2")}` : '';
+  return ff('QDRoboto', 400, f.r4) + ff('QDRoboto', 500, f.r5) + ff('QDRoboto', 700, f.r7) + ff('QDScript', 400, f.yt);
+};
+function qdEnsureStyle() {
+  if (document.getElementById('qdStyle')) return;
+  const s = document.createElement('style'); s.id = 'qdStyle'; s.textContent = qdFontCss() + QD_CSS; document.head.appendChild(s);
+}
+
+/* ---- document data ---- */
+const qdItem = p => p
+  ? { pid: p.id, name: [p.name, p.sku ? 'Product Code: ' + p.sku : '', num(p.warranty) > 0 ? p.warranty + (num(p.warranty) === 1 ? ' Month' : ' Months') + ' Warranty' : ''].filter(Boolean).join('\n'), sku: p.sku || '', qty: 1, regularPrice: num(p.price), price: num(p.price) }
+  : { pid: '', name: '', sku: '', qty: 1, regularPrice: 0, price: 0 };
+function qdBlank(type) {
+  const o = S(), inv = type === 'invoice', t = inv ? 'invoice' : 'quotation';
+  const until = new Date(); until.setDate(until.getDate() + 15);
+  return {
+    id: '', type: t, no: qdPeekNo(t), date: ymd(), validUntil: inv ? '' : ymd(until), poNumber: '',
+    dateLabel: 'DATE', m2Label: inv ? 'PO NO' : 'VALID UNTIL', numLabel: inv ? 'INV #' : 'QUOTE #',
+    customerId: '', customerName: '', billName: '', billPhone: '', billAddress: '',
+    companyName: o.business || '', companyTagline: o.tagline || '', companyAddress: o.address || '', companyPhone: o.phone || '', companyEmail: o.email || '',
+    companySub: o.docSub || '', companyFootTag: o.docFootTag || '', signName: o.docSignName || '',
+    terms: o.invoiceTerms || '', bankOn: false, accNo: '', accName: '', bank: '', branch: '',
+    items: [qdItem()], status: 'draft'
+  };
+}
+function qdFromRecord(rec) {
+  const type = rec.type === 'invoice' ? 'invoice' : 'quotation', inv = type === 'invoice';
+  const d = Object.assign(qdBlank(type), JSON.parse(JSON.stringify(rec)));
+  d.type = type;
+  d.dateLabel = d.dateLabel || 'DATE'; d.m2Label = d.m2Label || (inv ? 'PO NO' : 'VALID UNTIL'); d.numLabel = d.numLabel || (inv ? 'INV #' : 'QUOTE #');
+  d.billName = d.billName ?? (cust(d.customerId)?.name || d.customerName || '');
+  d.items = (rec.items || []).map(i => {
+    let name = String(i.name || ''); const sku = String(i.sku || '');
+    if (sku && !name.includes(sku)) name += '\n' + sku;        // older records kept the item code in a separate field
+    return { pid: i.pid || '', name, sku, qty: num(i.qty), regularPrice: num(i.regularPrice ?? i.price), price: num(i.price) };
+  });
+  return d;
+}
+
+/* ---- the A4 document (returns HTML; used by preview, print and PDF) ---- */
+function qdHTML(d) {
+  const q = d.type !== 'invoice', o = S();
+  const logo = o.docLogo || o.logoData || '', bulb = o.docBulb || '', sign = o.docSign || o.documentSignatureData || '';
+  let orig = 0, tot = 0;
+  const items = d.items || [];
+  items.forEach(i => { orig += num(i.qty) * num(i.regularPrice ?? i.price); tot += num(i.qty) * num(i.price); });
+  const rows = items.map((i, n) => {
+    const L = String(i.name || '').split('\n');
+    const desc = q ? `<b>${esc(L[0])}</b><br>${qdNl(L.slice(1).join('\n'))}` : qdNl(i.name);
+    return `<tr><td>${n + 1}</td><td class="qd-d">${desc}</td><td>${num(i.qty)}</td><td class="qd-n">${qm(num(i.regularPrice ?? i.price))}</td><td class="qd-n">${qm(i.price)}</td><td class="qd-n">${qm(num(i.qty) * num(i.price))}</td></tr>`;
+  });
+  while (q && rows.length < 5) rows.push('<tr><td></td><td class="qd-d"></td><td></td><td></td><td></td><td></td></tr>');
+  const cur = esc(o.currency || '');
+  const bank = d.bankOn ? `<div class="qd-bk"><h5>${QD_SVG.bank}BANK DETAILS</h5><b>Account Number:</b>${esc(d.accNo)}<b>Account Name:</b>${esc(d.accName)}<b>Bank:</b>${esc(d.bank)}<b>Branch:</b>${esc(d.branch)}</div>` : '';
+  const cols = d.bankOn ? '34% 25% 1fr' : '1fr 42%';
+  const line = (icon, html) => html ? `<div class="qd-ln">${icon}<span>${html}</span></div>` : '';
+  const fline = (icon, html) => html ? `<div class="qd-i">${icon}<span>${html}</span></div>` : '';
+  const m2 = q ? qdDate(d.validUntil) : d.poNumber;
+  return `<div class="qd">
+  <div class="qd-hd"><svg style="position:absolute;left:0;top:0" width="794" height="173" viewBox="0 0 794 173"><defs><linearGradient id="qdhg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="#0c3f96"/><stop offset="1" stop-color="#052362"/></linearGradient></defs><polygon points="275,0 794,0 794,173 376,173" fill="#2a78e4"/><polygon points="291,0 794,0 794,173 399,173" fill="url(#qdhg)"/></svg>
+    ${logo ? `<img class="qd-logo" src="${esc(logo)}" alt="">` : `<div class="qd-logo qd-logot">${esc(d.companyName)}</div>`}${bulb ? `<img class="qd-bulb" src="${esc(bulb)}" alt=""><div class="qd-bf"></div>` : ''}
+    ${d.companyTagline ? `<div class="qd-tag">${qdNl(d.companyTagline)}</div>` : ''}<div class="qd-ttl" style="font-size:${q ? 39 : 47}px">${q ? 'QUOTATION' : 'INVOICE'}</div>${d.companySub ? `<div class="qd-sub">${esc(d.companySub).replace(/ {2}/g, ' &nbsp;')}</div>` : ''}</div>
+  <div class="qd-info">
+    <div class="qd-co"><h2>${esc(d.companyName)}</h2>${line(QD_SVG.pin, qdNl(d.companyAddress))}${line(QD_SVG.tel, esc(d.companyPhone))}${line(QD_SVG.mail, esc(d.companyEmail))}</div>
+    <div class="qd-bt"><h3>BILL TO:</h3><h4>${esc(d.billName)}</h4>${line(QD_SVG.pin, qdNl(d.billAddress))}${line(QD_SVG.tel, esc(d.billPhone))}</div>
+    <div class="qd-meta"><div><b>${esc(d.dateLabel)}</b><span>${esc(qdDate(d.date))}</span></div><div><b>${esc(d.m2Label)}</b><span>${esc(m2)}</span></div><div><b>${esc(d.numLabel)}</b><span>${esc(d.no)}</span></div></div>
+  </div>
+  <table class="qd-it"><thead><tr><th>#</th><th class="qd-d">DESCRIPTION</th><th style="width:7.3%">QTY</th><th style="width:13.8%">NORMAL<br>PRICE (${cur})</th><th style="width:13.8%">DISCOUNT<br>PRICE (${cur})</th><th style="width:12.8%">TOTAL<br>(${cur})</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+  <div class="qd-bottom" style="grid-template-columns:${cols}">
+    <div class="qd-tc"><h5>${QD_SVG.doc}${q ? 'Terms &amp; Conditions:' : 'TERMS &amp; CONDITIONS'}</h5><ul>${qdLines(d.terms).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
+    ${bank}
+    <div class="qd-tot"><div class="qd-r"><span>ORIGINAL TOTAL (${cur})</span><span>${qm(orig)}</span></div><div class="qd-r"><span>DISCOUNT AMOUNT (${cur})</span><span>${qm(orig - tot)}</span></div><div class="qd-r qd-g"><span style="font-size:15px">TOTAL (${cur})</span><em>${cur} ${qm(tot)}/=</em></div></div>
+  </div>
+  <div class="qd-sig">${sign ? `<img src="${esc(sign)}" alt="">` : '<div style="height:58px"></div>'}<hr>Authorized Signatory<b>${esc(d.signName || d.companyName)}</b></div>
+  ${q ? '' : '<div class="qd-csig"><div class="qd-cspace"></div><hr>Customer Signature<div class="qd-cname"></div></div>'}
+  <div class="qd-ty"><i>Thank You!</i><span>FOR YOUR BUSINESS!</span></div>
+  <div class="qd-ft"><svg style="position:absolute;left:0;top:0" width="38" height="66" viewBox="0 0 38 66"><polygon points="0,0 23,0 0,66" fill="#1f7be6"/></svg>${fline(QD_SVG.ftpin, esc(String(d.companyAddress || '').replace(/\n/g, ' ')))}${fline(QD_SVG.ftel, esc(d.companyPhone))}${fline(QD_SVG.fmail, esc(d.companyEmail))}${d.companyFootTag ? `<div class="qd-q">${qdNl(d.companyFootTag)}</div>` : ''}</div></div>`;
+}
+
+/* ---- print and PDF ---- */
+function qdPrint(d) {
+  printHTML(qdHTML(d), qdFontCss() + QD_CSS + '@page{size:A4;margin:0}html,body{margin:0;background:#fff;height:1122px;overflow:hidden}', qdFileName(d), { paperSize: 'A4' });
+}
+let qdPdfLib = null;
+function qdLoadPdfLib() {                      // loaded only when first needed, so the app starts as fast as before
+  if (window.html2pdf) return Promise.resolve();
+  if (qdPdfLib) return qdPdfLib;
+  qdPdfLib = new Promise((resolve, reject) => {
+    const s = document.createElement('script'); s.src = 'lib/html2pdf.bundle.min.js';
+    s.onload = () => resolve(); s.onerror = () => { qdPdfLib = null; reject(new Error('PDF library is missing (lib/html2pdf.bundle.min.js)')); };
+    document.head.appendChild(s);
+  });
+  return qdPdfLib;
+}
+async function qdPdf(d) {
+  try { await qdLoadPdfLib(); }
+  catch (e) { toast(e.message + '. Opening the print dialog: choose "Save as PDF".', 'err'); return qdPrint(d); }
+  qdEnsureStyle();
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px';
+  host.innerHTML = qdHTML(d); document.body.appendChild(host);
+  try {
+    await Promise.all(['400 14px QDRoboto', '500 14px QDRoboto', '700 14px QDRoboto', '400 14px QDScript'].map(f => document.fonts.load(f).catch(() => {})));
+    await document.fonts.ready;
+    await html2pdf().set({
+      margin: 0, filename: qdFileName(d) + '.pdf', image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 3, useCORS: true, backgroundColor: '#ffffff', width: 794, height: 1122, windowWidth: 794 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(host.firstElementChild).save();
+    toast('PDF created');
+  } catch (err) { toast('PDF export failed: ' + (err?.message || err), 'err'); }
+  host.remove();
+}
+async function qdPdfBtn(el, d) {               // shows progress on the clicked button
+  if (el.disabled) return;
+  const t = el.textContent; el.disabled = true; el.textContent = 'Creating PDF…';
+  try { await qdPdf(d); } finally { el.disabled = false; el.textContent = t; }
+}
+
+/* ---- preview scaling (the A4 page is scaled down to the width available) ---- */
+function qdFit(stage, scaler, pad) {
+  if (!stage || !scaler) return;
+  const k = Math.min(1, Math.max(0.2, (stage.clientWidth - pad) / 794));
+  scaler.style.transform = `scale(${k})`; scaler.style.width = '794px'; scaler.style.height = Math.round(1122 * k) + 'px';
+}
+const qeFit = () => { qdFit($('#qeStage'), $('#qeScaler'), 30); document.querySelectorAll('[data-qfit]').forEach(st => qdFit(st, st.firstElementChild, 24)); };
+window.addEventListener('resize', qeFit);
+function qdOverflow(root) {                    // true when the content runs into the signature area (cut off on the A4 page)
+  const b = root && root.querySelector('.qd-bottom'), s = root && root.querySelector('.qd-sig');
+  return !!(b && s && b.getBoundingClientRect().bottom > s.getBoundingClientRect().top - 2);
+}
+
+/* ---- list of saved documents ---- */
 P.quotations = () => {
-  const q = qf.q.toLowerCase();
-  const rows = (db.quotations || []).filter(x => !q || (x.no + (cust(x.customerId)?.name || x.customerName || '')).toLowerCase().includes(q)).slice().reverse();
+  if (qe && qe.dirty) return qeMount();        // an unsaved draft is waiting: bring it back
+  qe = null;
   view(`${hdr('Quotations', '<button class="btn" data-act="newInvoiceDoc">+ New invoice document</button><button class="btn btn-p" data-act="newQuote">+ New quotation</button>')}<div class="filters"><input data-in="quoteSearch" placeholder="Search number or customer" value="${esc(qf.q)}"></div><div id="quoteList"></div>`);
-  $('#quoteList').innerHTML = `<p class="mut">${rows.length} document${rows.length === 1 ? '' : 's'}</p>` + tbl(['Type / Number', 'Date', 'Valid until / PO', 'Customer', '>Total', 'Status', ''], rows.map(x => `<tr><td><b>${x.type === 'invoice' ? 'INVOICE' : 'QUOTE'} · ${esc(x.no)}</b></td><td>${esc(x.date)}</td><td>${esc(x.type === 'invoice' ? (x.poNumber || '—') : (x.validUntil || '—'))}</td><td>${esc(x.billName || cust(x.customerId)?.name || x.customerName || 'Walk-in')}</td><td class="r">${money(quoteTotal(x))}</td><td><span class="badge ${x.status === 'converted' ? 'b-ok' : x.status === 'accepted' ? 'b-warn' : ''}">${esc(x.status || 'draft')}</span></td><td class="r" style="white-space:nowrap"><button class="btn btn-s" data-act="printQuote" data-id="${x.id}">Preview / Print</button> <button class="btn btn-s" data-act="editQuote" data-id="${x.id}">Edit</button> ${x.type !== 'invoice' && x.status !== 'converted' ? `<button class="btn btn-s btn-p" data-act="convertQuote" data-id="${x.id}">Convert to sale</button>` : ''} <button class="btn btn-s btn-d" data-act="delQuote" data-id="${x.id}">Delete</button></td></tr>`), 'No quotations or invoice documents yet');
+  qeListBody();
 };
-I.quoteSearch = v => { qf.q = v; P.quotations(); };
-function quoteForm(q = {}) {
-  const items = (q.items || []).map(i => ({ ...i, regularPrice: num(i.regularPrice ?? i.price) }));
-  const options = db.customers.map(c => `<option value="${esc(c.id)}" ${q.customerId === c.id ? 'selected' : ''}>${esc(c.name)} · ${esc(c.phone || '')}</option>`).join('');
-  const productOptions = db.products.filter(p => p.active !== false).map(p => `<option value="${esc(p.id)}">${esc(p.name)} · ${money(p.price)}</option>`).join('');
-  const ov = modal(q.id ? 'Edit quotation' : 'New quotation', `<form class="fg" id="quoteForm"><h3 class="full">Company details</h3><label class="f"><span>Business name</span><input name="companyName" value="${esc(q.companyName ?? S().business)}"></label><label class="f"><span>Tagline</span><input name="companyTagline" value="${esc(q.companyTagline ?? S().tagline)}"></label><label class="f"><span>Business address</span><textarea name="companyAddress" rows="2">${esc(q.companyAddress ?? S().address)}</textarea></label><label class="f"><span>Business phone</span><input name="companyPhone" value="${esc(q.companyPhone ?? S().phone)}"></label><label class="f"><span>Business email</span><input name="companyEmail" value="${esc(q.companyEmail ?? S().email)}"></label><label class="f"><span>Document accent</span><input name="accent" type="color" value="${esc(q.accent || S().invoiceAccent || '#333333')}"></label><div class="full"><label class="f"><span>Customer</span><select name="customerId"><option value="">Walk-in / no customer</option>${options}</select></label></div><label class="f"><span>Bill to name</span><input name="billName" value="${esc(q.billName ?? cust(q.customerId)?.name ?? '')}"></label><label class="f"><span>Customer phone</span><input name="billPhone" value="${esc(q.billPhone ?? cust(q.customerId)?.phone ?? '')}"></label><label class="f"><span>Customer address</span><textarea name="billAddress" rows="2">${esc(q.billAddress ?? cust(q.customerId)?.address ?? '')}</textarea></label><h3 class="full">${q.type === 'invoice' ? 'Invoice' : 'Quotation'} details</h3><label class="f"><span>Document number</span><input name="no" value="${esc(q.no || '')}" required></label><label class="f"><span>Date</span><input name="date" type="date" value="${esc(q.date || ymd())}" required></label><label class="f"><span>Valid until</span><input name="validUntil" type="date" value="${esc(q.validUntil || '')}"></label><label class="f"><span>PO number</span><input name="poNumber" value="${esc(q.poNumber || '')}"></label><label class="f full"><span>Notes / terms (one per line)</span><textarea name="terms" rows="3">${esc(q.terms ?? S().invoiceTerms ?? '')}</textarea></label><div class="full"><div class="tot"><b>Items</b><span class="sp"></span><select id="quoteProduct"><option value="">Add product…</option>${productOptions}</select><button type="button" class="btn btn-s" data-act="quoteAddItem">Add product</button><button type="button" class="btn btn-s" data-act="quoteAddCustomItem">Add custom item</button></div><div id="quoteItems"></div></div><h3 class="full">Bank details (optional)</h3><label class="f ck"><input type="checkbox" name="bankOn" ${q.bankOn ? 'checked' : ''}> Show bank details on this document</label><label class="f"><span>Account number</span><input name="accNo" value="${esc(q.accNo || '')}"></label><label class="f"><span>Account name</span><input name="accName" value="${esc(q.accName || '')}"></label><label class="f"><span>Bank</span><input name="bank" value="${esc(q.bank || '')}"></label><label class="f"><span>Branch</span><input name="branch" value="${esc(q.branch || '')}"></label></form>`, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn btn-p" data-act="quoteSave">Save ${q.type === 'invoice' ? 'invoice' : 'quotation'}</button>`, true);
-  ov._quote = q; ov._items = items;
-  const draw = (focus = null) => { const root = $('#quoteItems', ov); root.innerHTML = items.length ? `<div class="tw"><table><thead><tr><th>Description</th><th>Qty</th><th>Normal price</th><th>Discount price</th><th>Total</th><th></th></tr></thead><tbody>${items.map((i,n) => `<tr><td><textarea data-qi="${n}" data-qf="name" rows="2" style="min-width:180px">${esc(i.name)}</textarea><input placeholder="Item code" value="${esc(i.sku || '')}" data-qi="${n}" data-qf="sku" style="width:140px"></td><td><input type="number" min="0.01" step="any" value="${i.qty}" data-qi="${n}" data-qf="qty" style="width:76px"></td><td><input type="number" min="0" step="any" value="${i.regularPrice ?? i.price}" data-qi="${n}" data-qf="regularPrice" style="width:110px"></td><td><input type="number" min="0" step="any" value="${i.price}" data-qi="${n}" data-qf="price" style="width:110px"></td><td class="r">${money(num(i.qty)*num(i.price))}</td><td><button type="button" class="btn btn-s btn-d" data-act="quoteRemoveItem" data-id="${n}">Remove</button></td></tr>`).join('')}</tbody></table></div><div class="tot"><span>Original total: <b>${money(quoteOriginalTotal({items}))}</b></span><span>Discount: <b>${money(quoteDiscountTotal({items}))}</b></span><span>Total: <b>${money(quoteTotal({items}))}</b></span></div>` : '<div class="empty">Add products to this quotation.</div>'; if (focus) { const input = root.querySelector(`[data-qi="${focus.n}"][data-qf="${focus.key}"]`); input?.focus(); if (input?.setSelectionRange) input.setSelectionRange(input.value.length, input.value.length); } };
-  ov._drawItems = draw; draw();
-  ov.querySelector('#quoteForm').addEventListener('input', e => { if (e.target.dataset.qi === undefined) return; const n = +e.target.dataset.qi, key = e.target.dataset.qf; items[n][key] = ['qty','regularPrice','price'].includes(key) ? num(e.target.value) : e.target.value; draw({ n, key }); });
-  ov.querySelector('#quoteForm').elements.customerId.addEventListener('change', e => { const selected = cust(e.target.value); if (!selected) return; const f = ov.querySelector('#quoteForm'); f.elements.billName.value = selected.name || ''; f.elements.billPhone.value = selected.phone || ''; f.elements.billAddress.value = selected.address || ''; });
-  ov.querySelector('#quoteForm').addEventListener('submit', e => e.preventDefault());
-  return ov;
+function qeListBody() {
+  const q = qf.q.toLowerCase();
+  const rows = (db.quotations || []).filter(x => !q || (x.no + (x.billName || '') + (cust(x.customerId)?.name || x.customerName || '')).toLowerCase().includes(q)).slice().reverse();
+  const el = $('#quoteList'); if (!el) return;
+  el.innerHTML = `<p class="mut">${rows.length} document${rows.length === 1 ? '' : 's'}</p>` + tbl(['Type / Number', 'Date', 'Valid until / PO', 'Customer', '>Total', 'Status', ''], rows.map(x => `<tr><td><b>${x.type === 'invoice' ? 'INVOICE' : 'QUOTE'} · ${esc(x.no)}</b></td><td>${esc(qdDate(x.date))}</td><td>${esc(x.type === 'invoice' ? (x.poNumber || '—') : (qdDate(x.validUntil) || '—'))}</td><td>${esc(x.billName || cust(x.customerId)?.name || x.customerName || 'Walk-in')}</td><td class="r">${money(quoteTotal(x))}</td><td><span class="badge ${x.status === 'converted' ? 'b-ok' : x.status === 'accepted' ? 'b-warn' : ''}">${esc(x.status || 'draft')}</span></td><td class="r" style="white-space:nowrap"><button class="btn btn-s" data-act="printQuote" data-id="${x.id}">Preview</button> <button class="btn btn-s" data-act="editQuote" data-id="${x.id}">Edit</button> ${x.type !== 'invoice' && x.status !== 'converted' ? `<button class="btn btn-s btn-p" data-act="convertQuote" data-id="${x.id}">Convert to sale</button>` : ''} <button class="btn btn-s btn-d" data-act="delQuote" data-id="${x.id}">Delete</button></td></tr>`), 'No quotations or invoice documents yet');
 }
-A.newQuote = () => { const no = nextNo('quote', 'QT-'); const ov = quoteForm({ no }); };
-A.newInvoiceDoc = () => { const no = nextNo('quote', 'INV-'); quoteForm({ no, type: 'invoice', terms: S().invoiceTerms || '' }); };
-A.editQuote = id => { const q = db.quotations.find(x => x.id === id); if (q) quoteForm(q); };
-A.quoteAddItem = (id, el) => { const ov = el.closest('.ov'), pid = $('#quoteProduct', ov).value, p = prod(pid); if (!p) return toast('Choose a product first', 'err'); ov._items.push({ pid: p.id, name: p.name, sku: p.sku || '', qty: 1, regularPrice: num(p.price), price: num(p.price) }); ov._drawItems(); };
-A.quoteAddCustomItem = (id, el) => { const ov = el.closest('.ov'); ov._items.push({ pid: '', name: 'New item description', sku: '', qty: 1, regularPrice: 0, price: 0 }); ov._drawItems(); };
-A.quoteRemoveItem = (n, el) => { const ov = el.closest('.ov'); ov._items.splice(+n, 1); ov._drawItems(); };
-A.quoteSave = (id, el) => { const ov = el.closest('.ov'), f = ov.querySelector('#quoteForm'); if (!f.reportValidity()) return; if (!ov._items.length) return toast('Add at least one item', 'err'); const v = Object.fromEntries(new FormData(f)); const existing = ov._quote; const row = { ...(existing || {}), id: existing?.id || uid(), no: v.no.trim(), date: v.date, validUntil: v.validUntil, poNumber: v.poNumber, customerId: v.customerId, customerName: v.billName.trim() || cust(v.customerId)?.name || '', billName: v.billName.trim(), billPhone: v.billPhone.trim(), billAddress: v.billAddress.trim(), companyName: v.companyName.trim(), companyTagline: v.companyTagline.trim(), companyAddress: v.companyAddress.trim(), companyPhone: v.companyPhone.trim(), companyEmail: v.companyEmail.trim(), accent: v.accent, bankOn: f.elements.bankOn.checked, accNo: v.accNo, accName: v.accName, bank: v.bank, branch: v.branch, terms: v.terms, items: ov._items.map(i => ({ ...i, name: String(i.name || '').trim(), sku: String(i.sku || '').trim(), qty: num(i.qty), regularPrice: r2(i.regularPrice ?? i.price), price: r2(i.price) })), status: existing?.status || 'draft', createdAt: existing?.createdAt || nowISO(), updatedAt: nowISO(), user: existing?.user || me.name }; if (row.items.some(i => !i.name || i.qty <= 0 || i.price < 0 || i.regularPrice < 0)) return toast('Check item descriptions, quantities and prices', 'err'); const duplicate = db.quotations.find(x => x.no === row.no && x.id !== row.id); if (duplicate) return toast('Document number already exists', 'err'); if (existing) Object.assign(existing, row); else db.quotations.push(row); log('quotation', `${row.no} ${money(quoteTotal(row))}`); save(); ov.remove(); P.quotations(); toast('Quotation saved'); };
-A.delQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || !(await confirmDlg(`Delete quotation ${q.no}?`))) return; db.quotations = db.quotations.filter(x => x.id !== id); save(); P.quotations(); };
-function quotePrintHTML(q) {
-  const c = cust(q.customerId), rows = (q.items || []).map((i, n) => {
-    const regular = num(i.regularPrice ?? i.price), discount = num(i.price), amount = num(i.qty) * discount;
-    return `<tr><td>${n + 1}</td><td class="desc"><b>${esc(i.name)}</b>${i.sku ? `<br><small>${esc(i.sku)}</small>` : ''}</td><td class="r">${num(i.qty)}</td><td class="r">${money(regular)}</td><td class="r">${money(discount)}</td><td class="r">${money(amount)}</td></tr>`;
-  }).join('');
-  const blankRows = Array.from({ length: Math.max(0, 5 - (q.items || []).length) }, () => '<tr class="blank"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>').join('');
-  const terms = String(q.terms || '').split('\n').filter(x => x.trim());
-  const accent = /^#[0-9a-f]{6}$/i.test(q.accent || '') ? q.accent : (S().invoiceAccent || '#333333');
-  const company = { name: q.companyName ?? S().business, tagline: q.companyTagline ?? S().tagline, address: q.companyAddress ?? S().address, phone: q.companyPhone ?? S().phone, email: q.companyEmail ?? S().email };
-  const customer = { name: q.billName || c?.name || q.customerName || 'Walk-in customer', address: q.billAddress ?? c?.address, phone: q.billPhone ?? c?.phone, email: c?.email };
-  const title = q.type === 'invoice' ? 'INVOICE' : 'QUOTATION';
-  const bank = q.bankOn ? `<div class="bank"><h2>BANK DETAILS</h2>${q.accNo ? `<p><b>Account Number:</b> ${esc(q.accNo)}</p>` : ''}${q.accName ? `<p><b>Account Name:</b> ${esc(q.accName)}</p>` : ''}${q.bank ? `<p><b>Bank:</b> ${esc(q.bank)}</p>` : ''}${q.branch ? `<p><b>Branch:</b> ${esc(q.branch)}</p>` : ''}</div>` : '';
-  return `<main class="doc"><header><div class="identity">${S().logoData ? `<img class="logo" src="${esc(S().logoData)}" alt="">` : ''}<div><h1>${esc(company.name || 'POS')}</h1>${company.tagline ? `<div class="tagline">${esc(company.tagline)}</div>` : ''}</div></div><div class="title">${title}</div></header>
-  <section class="info"><div class="company"><h2>BUSINESS DETAILS</h2>${company.address ? `<p>${esc(company.address).replace(/\n/g, '<br>')}</p>` : ''}${company.phone ? `<p>${esc(company.phone)}</p>` : ''}${company.email ? `<p>${esc(company.email)}</p>` : ''}</div><div class="bill"><h2>BILL TO</h2><b>${esc(customer.name)}</b>${customer.address ? `<p>${esc(customer.address).replace(/\n/g, '<br>')}</p>` : ''}${customer.phone ? `<p>${esc(customer.phone)}</p>` : ''}${customer.email ? `<p>${esc(customer.email)}</p>` : ''}</div><div class="meta"><div><b>DATE</b><span>${esc(q.date || '')}</span></div>${q.type === 'invoice' ? `<div><b>PO NO</b><span>${esc(q.poNumber || '—')}</span></div>` : `<div><b>VALID UNTIL</b><span>${esc(q.validUntil || '—')}</span></div>`}<div><b>${title} #</b><span>${esc(q.no || '')}</span></div></div></section>
-  <table class="items"><thead><tr><th>#</th><th>DESCRIPTION</th><th>QTY</th><th>NORMAL PRICE</th><th>DISCOUNT PRICE</th><th>TOTAL</th></tr></thead><tbody>${rows}${blankRows}</tbody></table>
-  <section class="summary"><div>${bank}<div class="terms"><h2>TERMS &amp; CONDITIONS</h2>${terms.length ? `<ul>${terms.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p>Prices and availability are subject to confirmation.</p>'}</div></div><div class="totals"><div><span>ORIGINAL TOTAL</span><b>${money(quoteOriginalTotal(q))}</b></div><div><span>DISCOUNT AMOUNT</span><b>${money(quoteDiscountTotal(q))}</b></div><div class="grand"><span>TOTAL</span><b>${money(quoteTotal(q))}</b></div></div></section>
-  ${S().documentSignatureData ? `<div class="signature"><img src="${esc(S().documentSignatureData)}" alt="Authorized signature"><div class="signline">Authorized signatory</div></div>` : `<div class="signature"><div class="signline">Authorized signatory</div></div>`}<div class="thanks">${esc(S().footer || 'Thank you for your business.')}</div></main>`;
-}
+I.quoteSearch = v => { qf.q = v; qeListBody(); };
+
+A.newQuote = () => { qe = { d: qdBlank('quotation'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
+A.newInvoiceDoc = () => { qe = { d: qdBlank('invoice'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
+A.editQuote = (id, el) => { const rec = db.quotations.find(x => x.id === id); if (!rec) return; el?.closest('.ov')?.remove(); qe = { d: qdFromRecord(rec), rec, isNew: false, drafts: {}, dirty: false }; qeMount(); };
+A.delQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || !(await confirmDlg(`Delete ${q.type === 'invoice' ? 'invoice document' : 'quotation'} ${q.no}?`))) return; db.quotations = db.quotations.filter(x => x.id !== id); log('quotation deleted', q.no); save(); P.quotations(); };
+
+/* ---- preview window for a saved document ---- */
 A.printQuote = id => {
-  const q = db.quotations.find(x => x.id === id); if (!q) return;
-  const accent = /^#[0-9a-f]{6}$/i.test(q.accent || '') ? q.accent : '#333333';
-  const css = `@page{size:A4;margin:0}body{margin:0;color:#222;background:#fff;font:12px Arial,sans-serif}.doc{box-sizing:border-box;width:210mm;min-height:297mm;padding:18mm 17mm 15mm;position:relative}.doc *{box-sizing:border-box}header{height:42mm;position:relative;overflow:hidden;background:${accent};color:#fff;padding:9mm 10mm;display:flex;align-items:center;justify-content:space-between}header:after{content:"";position:absolute;right:-10mm;top:-25mm;width:95mm;height:90mm;transform:rotate(-25deg);background:rgba(255,255,255,.11)}.identity,.title{position:relative;z-index:1}.identity{display:flex;align-items:center;gap:12px;max-width:60%}.logo{width:62px;height:62px;object-fit:contain;background:#fff;border-radius:6px;padding:4px}.identity h1{font-size:21px;margin:0 0 5px}.tagline{font-size:10px;opacity:.9}.title{font-size:25px;font-weight:bold;letter-spacing:2px}.info{display:grid;grid-template-columns:1.1fr 1.1fr .9fr;gap:16px;padding:20px 0 16px;border-bottom:1px solid #ddd}.info h2,.terms h2,.bank h2{font-size:11px;color:${accent};letter-spacing:1px;margin:0 0 9px}.info p,.bank p{margin:3px 0;line-height:1.4}.meta div{display:flex;justify-content:space-between;gap:8px;padding:3px 0}.meta b{font-size:9px;color:#555}.items{width:100%;border-collapse:collapse;margin-top:19px;table-layout:fixed}.items th{background:${accent};color:white;text-align:right;font-size:9px;padding:9px 6px}.items th:nth-child(1){width:5%;text-align:center}.items th:nth-child(2){width:37%;text-align:left}.items th:nth-child(3){width:8%}.items th:nth-child(4),.items th:nth-child(5){width:17%}.items th:nth-child(6){width:16%}.items td{padding:9px 6px;border-bottom:1px solid #ddd;vertical-align:top}.items td:first-child{text-align:center}.desc{overflow-wrap:anywhere}.items small{color:#666}.r{text-align:right;white-space:nowrap}.blank td{height:30px}.summary{display:grid;grid-template-columns:1fr 235px;gap:22px;margin-top:20px}.terms h2{margin-bottom:6px}.terms ul{margin:0;padding-left:17px}.terms li{margin:5px 0;line-height:1.35}.totals>div{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #eee}.totals span{font-size:9px;color:#555}.totals .grand{margin-top:4px;background:${accent};color:white;padding:10px}.totals .grand span{color:white;font-size:12px;font-weight:bold}.totals .grand b{font-size:15px}.signature{position:absolute;right:17mm;bottom:35mm;width:62mm;text-align:center}.signature img{display:block;max-width:52mm;max-height:22mm;object-fit:contain;margin:0 auto 5px}.signline{border-top:1px solid #555;padding-top:7px;font-size:10px}.thanks{position:absolute;bottom:14mm;left:17mm;right:17mm;border-top:2px solid ${accent};padding-top:9px;text-align:center;font-weight:bold;color:${accent}}`;
-  modal('Quotation preview — ' + q.no, `<div class="quote-preview">${quotePrintHTML(q)}</div>`, `<button class="btn" data-act="closeModal">Close</button><button class="btn" data-act="printQuoteDoc" data-id="${esc(q.id)}">Print</button><button class="btn btn-p" data-act="printQuotePdf" data-id="${esc(q.id)}">Save as PDF</button>`, true);
-  const style = document.createElement('style'); style.dataset.quotePreview = '1'; style.textContent = `.quote-preview{max-height:70vh;overflow:auto;background:#eef0f4;padding:16px}.quote-preview .doc{transform-origin:top left;transform:scale(.72);margin-bottom:-240px;box-shadow:0 2px 10px #0002}@media(max-width:850px){.quote-preview .doc{transform:scale(.55);margin-bottom:-380px}}`; document.head.appendChild(style);
-  const ov = document.querySelector('.ov:last-child'); ov.addEventListener('remove', () => style.remove(), { once: true });
-  ov._quoteCss = css; ov._quoteBody = quotePrintHTML(q); ov._quoteTitle = 'Quotation_' + (q.no || 'document');
+  const rec = db.quotations.find(x => x.id === id); if (!rec) return;
+  qdEnsureStyle();
+  const d = qdFromRecord(rec), sid = esc(id);
+  const ov = modal('Preview — ' + d.no, `<div class="qe-pv" data-qfit="1"><div class="qe-scaler">${qdHTML(d)}</div></div>`,
+    `<button class="btn" data-act="closeModal">Close</button><button class="btn" data-act="editQuote" data-id="${sid}">Edit</button><button class="btn" data-act="qePvPrint" data-id="${sid}">Print</button><button class="btn btn-p" data-act="qePvPdf" data-id="${sid}">Download PDF</button>`, true);
+  qeFit();
+  ov.querySelector('.qe-pv')?.scrollTo(0, 0);
 };
-A.printQuoteDoc = (id, el) => { const ov = el.closest('.ov'); if (ov) printHTML(ov._quoteBody, ov._quoteCss, ov._quoteTitle, { paperSize: 'A4' }); };
-A.printQuotePdf = (id, el) => { const ov = el.closest('.ov'); if (ov) printHTML(ov._quoteBody, ov._quoteCss, ov._quoteTitle, { paperSize: 'A4' }); };
-A.convertQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || q.status === 'converted' || q.type === 'invoice') return; if (!(await confirmDlg(`Convert ${q.no} to a sale? Stock and payment will be handled in Point of Sale.`, 'Continue'))) return; if (cart.length) return toast('Finish or hold the current bill before loading a quotation', 'err'); const missing = q.items.filter(i => i.pid && !prod(i.pid)); if (missing.length) return toast('A quoted product is no longer in the product list', 'err'); for (const i of q.items) { if (!i.pid) return toast('Custom quotation items cannot be converted to a stock sale. Replace them with products first.', 'err'); const p = prod(i.pid); if (p.tracked || num(i.qty) > p.stock) return toast(`${p.name} is tracked by serial number or has insufficient stock`, 'err'); } cart = q.items.map(i => { const p = prod(i.pid), regular = num(p.price), quoted = num(i.price); return { pid:i.pid, name:i.name, qty:num(i.qty), price:regular, disc:r2(Math.max(regular - quoted, 0) * num(i.qty)), cost:p.cost || 0, dev:null, imei:'', warrantyM:p.warranty || 0 }; }); ps.cust = q.customerId || ''; ps.customerReady = !!cust(ps.cust); ps.customerPhone = cust(ps.cust)?.phone || ''; ps.dVal = 0; q.status = 'accepted'; q.acceptedAt = nowISO(); save(); nav('pos'); toast('Quote loaded into Point of Sale. Review tax and complete payment to create the sale.'); };
+A.qePvPrint = id => { const rec = db.quotations.find(x => x.id === id); if (rec) qdPrint(qdFromRecord(rec)); };
+A.qePvPdf = (id, el) => { const rec = db.quotations.find(x => x.id === id); if (rec) qdPdfBtn(el, qdFromRecord(rec)); };
+
+/* ---- editor ---- */
+function qeMount() {
+  qdEnsureStyle();
+  const d = qe.d, q = d.type !== 'invoice';
+  view(`${hdr(qe.isNew ? 'New ' + (q ? 'quotation' : 'invoice document') : 'Edit ' + esc(d.no), '<button class="btn" data-act="qeBack">← Back to list</button><button class="btn btn-p" data-act="qeSave">Save</button>')}
+<div class="qe"><aside class="qe-panel" id="qePanel"></aside><div class="qe-right"><div class="qe-warn" id="qeWarn" hidden>⚠ The content is longer than one A4 page. Shorten the descriptions or terms, or remove items: anything below the page edge is cut off when printing or saving as PDF.</div><main class="qe-stage" id="qeStage"><div class="qe-scaler" id="qeScaler"></div></main></div></div>`);
+  qeForm(); qeRender();
+}
+const qeF = (label, key, o = {}) => {
+  const v = qe.d[key] ?? '';
+  return `<label class="qe-l">${label}${o.area ? `<textarea data-in="qe" data-k="${key}" rows="${o.rows || 2}">${esc(v)}</textarea>` : `<input data-in="qe" data-k="${key}" type="${o.type || 'text'}" value="${esc(v)}">`}</label>`;
+};
+function qeItemsHTML() {
+  return qe.d.items.map((it, i) => `<div class="qe-item"><div class="qe-itop">Item ${i + 1}<button type="button" data-act="qeDel" data-id="${i}">Remove</button></div>
+<textarea data-in="qei" data-n="${i}" data-f="name" rows="3" placeholder="Item description${qe.d.type === 'invoice' ? '' : ' (first line is shown in bold)'}">${esc(it.name)}</textarea>
+<div class="qe-row3"><label class="qe-l">Qty<input type="number" min="0" step="any" data-in="qei" data-n="${i}" data-f="qty" value="${esc(it.qty)}"></label><label class="qe-l">Normal price<input type="number" min="0" step="0.01" data-in="qei" data-n="${i}" data-f="regularPrice" value="${esc(it.regularPrice)}"></label><label class="qe-l">Discount price<input type="number" min="0" step="0.01" data-in="qei" data-n="${i}" data-f="price" value="${esc(it.price)}"></label></div></div>`).join('') || '<div class="qe-note">No items yet. Add an item or choose a product below.</div>';
+}
+function qeForm() {
+  const panel = $('#qePanel'); if (!panel || !qe) return;
+  const st = panel.scrollTop, d = qe.d, q = d.type !== 'invoice', o = S();
+  const custOpts = db.customers.map(c => `<option value="${esc(c.id)}" ${d.customerId === c.id ? 'selected' : ''}>${esc(c.name)}${c.phone ? ' · ' + esc(c.phone) : ''}</option>`).join('');
+  const prodOpts = db.products.filter(p => p.active !== false).map(p => `<option value="${esc(p.id)}">${esc(p.name)} · ${money(p.price)}</option>`).join('');
+  const imgBtn = (k, label) => o[k] ? `<button type="button" class="qe-x" data-act="qeImgClear" data-id="${k}">Remove ${label}</button>` : '';
+  panel.innerHTML = `<div class="qe-tabs"><button type="button" class="qe-tab ${q ? 'on' : ''}" data-act="qeTab" data-id="quotation" ${!qe.isNew && !q ? 'disabled' : ''}>Quotation</button><button type="button" class="qe-tab ${q ? '' : 'on'}" data-act="qeTab" data-id="invoice" ${!qe.isNew && q ? 'disabled' : ''}>Invoice</button></div>
+<fieldset class="qe-fs"><legend>Your company</legend>${qeF('Company name', 'companyName')}${qeF('Address', 'companyAddress', { area: 1 })}
+  <div class="qe-row2">${qeF('Phone', 'companyPhone')}${qeF('Email', 'companyEmail')}</div>
+  ${qeF('Header tagline', 'companyTagline', { area: 1 })}${qeF('Header subtitle', 'companySub')}${qeF('Footer text (right)', 'companyFootTag', { area: 1 })}${qeF('Signatory name', 'signName')}
+  <div class="qe-row3 eq" style="margin-top:8px"><label class="qe-l">Logo<input type="file" accept="image/png,image/jpeg,image/webp" data-qimg="docLogo"></label><label class="qe-l">Header image<input type="file" accept="image/png,image/jpeg,image/webp" data-qimg="docBulb"></label><label class="qe-l">Signature<input type="file" accept="image/png,image/jpeg,image/webp" data-qimg="docSign"></label></div>
+  <div class="qe-imgs">${imgBtn('docLogo', 'logo')}${imgBtn('docBulb', 'header image')}${imgBtn('docSign', 'signature')}</div>
+  <p class="qe-note">Images are saved once and reused on every document. With no logo chosen, the logo from Settings is used.</p></fieldset>
+<fieldset class="qe-fs"><legend>Customer</legend><label class="qe-l">Saved customer<select data-in="qeCust"><option value="">Walk-in / type below</option>${custOpts}</select></label>${qeF('Bill to name', 'billName')}${qeF('Address', 'billAddress', { area: 1 })}${qeF('Phone', 'billPhone')}</fieldset>
+<fieldset class="qe-fs"><legend>${q ? 'Quotation' : 'Invoice'} details</legend>
+  <div class="qe-row2">${qeF('Date', 'date', { type: 'date' })}${qeF(q ? 'Quote #' : 'Invoice #', 'no')}</div>
+  <div class="qe-row2">${q ? qeF('Valid until', 'validUntil', { type: 'date' }) : qeF('PO number', 'poNumber')}${qeF('Label of this field', 'm2Label')}</div></fieldset>
+<fieldset class="qe-fs"><legend>Items</legend><div id="qeItems">${qeItemsHTML()}</div>
+  <div class="qe-actions-row"><button type="button" class="btn" data-act="qeAddItem">+ Add item</button></div>
+  <div class="qe-addprod"><select id="qeProd"><option value="">Add from products…</option>${prodOpts}</select><button type="button" class="btn" data-act="qeAddProduct">Add product</button></div></fieldset>
+<fieldset class="qe-fs"><legend>Terms &amp; conditions (one per line)</legend>${qeF('', 'terms', { area: 1, rows: 5 })}</fieldset>
+<fieldset class="qe-fs"><legend>Bank details</legend><label class="qe-l qe-ck"><input type="checkbox" data-in="qe" data-k="bankOn" ${d.bankOn ? 'checked' : ''}> Show bank details</label>${qeF('Account number', 'accNo')}${qeF('Account name', 'accName')}<div class="qe-row2">${qeF('Bank', 'bank')}${qeF('Branch', 'branch')}</div></fieldset>
+<div class="qe-actions"><button type="button" class="btn btn-p" data-act="qePdf">Download PDF</button><button type="button" class="btn" data-act="qePrint">Print</button><button type="button" class="btn" data-act="qeReset">Reset</button></div>`;
+  panel.scrollTop = st;
+}
+function qeRender() {
+  const sc = $('#qeScaler'); if (!sc || !qe) return;
+  sc.innerHTML = qdHTML(qe.d);
+  qeFit();
+  const w = $('#qeWarn'); if (w) w.hidden = !qdOverflow(sc);
+}
+I.qe = (v, el) => { if (!qe) return; qe.d[el.dataset.k] = v; qe.dirty = true; qeRender(); };
+I.qei = (v, el) => { if (!qe) return; const it = qe.d.items[+el.dataset.n], f = el.dataset.f; if (!it) return; it[f] = f === 'name' ? v : num(v); qe.dirty = true; qeRender(); };
+I.qeCust = v => {
+  if (!qe) return; const c = cust(v); qe.d.customerId = v; qe.dirty = true;
+  if (c) { Object.assign(qe.d, { billName: c.name || '', billPhone: c.phone || '', billAddress: c.address || '' }); ['billName', 'billPhone', 'billAddress'].forEach(k => { const e = document.querySelector(`#qePanel [data-k="${k}"]`); if (e) e.value = qe.d[k]; }); }
+  qeRender();
+};
+document.addEventListener('change', async e => {                 // company images (logo / header image / signature)
+  const k = e.target?.dataset?.qimg, f = e.target?.files?.[0]; if (!k || !f) return;
+  try { S()[k] = await browserLogoData(f); save(); qeForm(); qeRender(); toast('Image saved'); }
+  catch (err) { toast(err.message || 'Could not load the image', 'err'); }
+  e.target.value = '';
+});
+A.qeImgClear = id => { if (!['docLogo', 'docBulb', 'docSign'].includes(id)) return; S()[id] = ''; save(); qeForm(); qeRender(); };
+A.qeTab = type => {
+  if (!qe || !qe.isNew || type === qe.d.type || !['quotation', 'invoice'].includes(type)) return;
+  const old = qe.d; qe.drafts[old.type] = old;
+  const nd = qe.drafts[type] || qdBlank(type); QE_COMPANY.forEach(k => nd[k] = old[k]);   // company details are shared by both tabs
+  qe.d = nd; qeMount();
+};
+A.qeAddItem = () => { qe.d.items.push(qdItem()); qe.dirty = true; $('#qeItems').innerHTML = qeItemsHTML(); qeRender(); const t = document.querySelectorAll('#qeItems textarea'); t[t.length - 1]?.focus(); };
+A.qeAddProduct = () => {
+  const sel = $('#qeProd'), p = prod(sel?.value); if (!p) return toast('Choose a product first', 'err');
+  qe.d.items.push(qdItem(p)); qe.dirty = true; sel.value = ''; $('#qeItems').innerHTML = qeItemsHTML(); qeRender();
+};
+A.qeDel = n => { qe.d.items.splice(+n, 1); qe.dirty = true; $('#qeItems').innerHTML = qeItemsHTML(); qeRender(); };
+A.qePrint = () => qdPrint(qe.d);
+A.qePdf = (id, el) => qdPdfBtn(el, qe.d);
+A.qeReset = async () => {
+  if (!(await confirmDlg(qe.rec ? 'Discard your changes and reload the saved document?' : 'Clear this document and start again?', 'Reset'))) return;
+  qe.d = qe.rec ? qdFromRecord(qe.rec) : qdBlank(qe.d.type); qe.drafts = {}; qe.dirty = false; qeMount();
+};
+A.qeBack = async () => {
+  if (qe?.dirty && !(await confirmDlg('Leave without saving your changes to this document?', 'Leave'))) return;
+  qe = null; P.quotations();
+};
+A.qeSave = () => {
+  if (!qe) return;
+  const d = qe.d, ex = qe.rec, inv = d.type === 'invoice', no = String(d.no || '').trim();
+  if (!no) return toast('Enter the document number', 'err');
+  if (!d.date) return toast('Choose the document date', 'err');
+  if (!d.items.length) return toast('Add at least one item', 'err');
+  const items = d.items.map(i => ({ pid: i.pid || '', name: String(i.name || '').trim(), sku: String(i.sku || '').trim(), qty: num(i.qty), regularPrice: r2(i.regularPrice ?? i.price), price: r2(i.price) }));
+  if (items.some(i => !i.name || i.qty <= 0 || i.price < 0 || i.regularPrice < 0)) return toast('Check item descriptions, quantities and prices', 'err');
+  if (db.quotations.some(x => x.no === no && x.id !== (ex?.id || ''))) return toast('Document number already exists', 'err');
+  const c = cust(d.customerId);
+  const row = {
+    ...(ex || {}), id: ex?.id || uid(), type: inv ? 'invoice' : 'quotation', no, date: d.date, validUntil: d.validUntil || '', poNumber: d.poNumber || '',
+    dateLabel: d.dateLabel, m2Label: d.m2Label, numLabel: d.numLabel,
+    customerId: d.customerId || '', customerName: String(d.billName || '').trim() || c?.name || '', billName: String(d.billName || '').trim(), billPhone: String(d.billPhone || '').trim(), billAddress: String(d.billAddress || '').trim(),
+    companyName: String(d.companyName || '').trim(), companyTagline: String(d.companyTagline || '').trim(), companyAddress: String(d.companyAddress || '').trim(), companyPhone: String(d.companyPhone || '').trim(), companyEmail: String(d.companyEmail || '').trim(),
+    companySub: String(d.companySub || '').trim(), companyFootTag: String(d.companyFootTag || '').trim(), signName: String(d.signName || '').trim(),
+    terms: d.terms || '', bankOn: !!d.bankOn, accNo: d.accNo || '', accName: d.accName || '', bank: d.bank || '', branch: d.branch || '',
+    items, status: ex?.status || 'draft', createdAt: ex?.createdAt || nowISO(), updatedAt: nowISO(), user: ex?.user || me.name
+  };
+  if (!ex && no === qdPeekNo(row.type)) db.counters.quote++;       // use up the suggested number
+  if (ex) Object.assign(ex, row); else db.quotations.push(row);
+  const o = S(); o.docSub = row.companySub; o.docFootTag = row.companyFootTag; o.docSignName = row.signName;   // remembered for the next document
+  log(inv ? 'invoice document' : 'quotation', `${row.no} ${money(quoteTotal(row))}`); save();
+  qe.rec = ex || row; qe.isNew = false; qe.drafts = {}; qe.dirty = false; qe.d = qdFromRecord(qe.rec);
+  qeMount(); toast(inv ? 'Invoice document saved' : 'Quotation saved');
+};
+
+A.convertQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || q.status === 'converted' || q.type === 'invoice') return; if (!(await confirmDlg(`Convert ${q.no} to a sale? Stock and payment will be handled in Point of Sale.`, 'Continue'))) return; if (cart.length) return toast('Finish or hold the current bill before loading a quotation', 'err'); const missing = q.items.filter(i => i.pid && !prod(i.pid)); if (missing.length) return toast('A quoted product is no longer in the product list', 'err'); for (const i of q.items) { if (!i.pid) return toast('Custom quotation items cannot be converted to a stock sale. Replace them with products first.', 'err'); const p = prod(i.pid); if (p.tracked || num(i.qty) > p.stock) return toast(`${p.name} is tracked by serial number or has insufficient stock`, 'err'); } cart = q.items.map(i => { const p = prod(i.pid), regular = num(p.price), quoted = num(i.price); return { pid:i.pid, name:p.name, qty:num(i.qty), price:regular, disc:r2(Math.max(regular - quoted, 0) * num(i.qty)), cost:p.cost || 0, dev:null, imei:'', warrantyM:p.warranty || 0 }; }); ps.cust = q.customerId || ''; ps.customerReady = !!cust(ps.cust); ps.customerPhone = cust(ps.cust)?.phone || ''; ps.dVal = 0; q.status = 'accepted'; q.acceptedAt = nowISO(); save(); nav('pos'); toast('Quote loaded into Point of Sale. Review tax and complete payment to create the sale.'); };
 function refreshInvoicePreview() {
   const frame = $('#invoicePreview'); if (!frame) return;
   const sample = { no: 'INV-000123', at: nowISO(), day: ymd(), status: 'done', customerId: '', user: me?.name || 'Cashier', items: [{ name: 'Sample product', qty: 2, price: 1250, disc: 0, imei: '' }], itemsGross: 2500, lineDisc: 0, billDisc: 0, tax: 0, total: 2500, paid: 2500, pays: [{ method: 'Cash', amount: 2500 }], change: 0 };
