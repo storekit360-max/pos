@@ -39,7 +39,7 @@ const dataFile = () => path.join(app.getPath('userData'), 'data.json');
 const logFile = () => path.join(app.getPath('userData'), 'backup-log.json');
 const licenseFile = () => path.join(app.getPath('userData'), 'license.json');
 const TRIAL_MS = 24 * 60 * 60 * 1000;
-const licenseKeys = {
+const legacyLicenseKeys = {
   '12360b601a951d9e579d85656364c5c5123dfa641067161df1ac438071d46f04': 'permanent',
   '843a3a12c70d4c67064561d1e70360ceb01135d40f99898d518abbe0f092c4f8': 'permanent',
   '0bdf99f76d52d7a692051dea9673bdf60de4788be79ad84d5c52c698b3152483': 'permanent',
@@ -267,7 +267,7 @@ ipcMain.handle('license:status', () => licenseStatus());
 ipcMain.handle('license:start', () => { if (!readLicense()) writeLicense({ startedAt: Date.now(), type: 'trial' }); return licenseStatus(); });
 ipcMain.handle('license:activate', (_e, raw) => {
   const key = String(raw || '').trim().toUpperCase();
-  const type = licenseKeys[crypto.createHash('sha256').update(key).digest('hex')];
+  const type = legacyLicenseKeys[crypto.createHash('sha256').update(key).digest('hex')];
   if (!type) return { ok: false, error: 'Invalid license key' };
   const l = readLicense() || { startedAt: Date.now() };
   writeLicense({ ...l, type, activatedAt: Date.now() });
