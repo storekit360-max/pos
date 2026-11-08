@@ -26,6 +26,7 @@ function defaults() {
     settings: {
       business: 'POS', address: '', phone: '', email: '', tagline: '', description: '', logoData: '', customerDisplay: false,
       invoiceStyle: 'a4', invoiceNotes: 'It was great doing business with you.', invoiceTerms: 'Please make the payment by the due date.',
+      invoiceDocumentTemplateId: '', invoiceDocumentTemplates: [],
       invoiceTitle: 'INVOICE', invoiceFont: 'Arial', invoiceFontSize: 14, invoicePageSize: 'A4', invoicePageMargin: 14, invoiceLogoWidth: 120,
       invoiceShowLogo: true, invoiceShowBusiness: true, invoiceShowAddress: true, invoiceShowPhone: true, invoiceShowEmail: true,
       invoiceShowCustomer: true, invoiceShowCashier: false, invoiceShowDueDate: true, invoiceShowItemCode: false,
@@ -231,6 +232,8 @@ ${s.total - s.paid > 0.005 ? `<div class="totline" style="font-weight:bold"><spa
 }
 function invoiceDocument(s) {
   const c = s.customerId ? cust(s.customerId) : null, date = (s.day || '').slice(0, 10), o = S();
+  const savedTemplate = (o.invoiceDocumentTemplates || []).find(t => t.id === o.invoiceDocumentTemplateId);
+  if (savedTemplate) return invoiceFromDocumentTemplate(s, savedTemplate);
   const on = k => o[k] !== false;
   const rows = s.items.map(i => `<tr><td>${esc(i.name)}${on('invoiceShowItemCode') && i.sku ? `<small class="sub">${esc(i.sku)}</small>` : ''}${i.imei ? `<small class="sub">IMEI/SN: ${esc(i.imei)}</small>` : ''}</td><td>${i.qty}</td><td>${money(i.price)}</td><td>${money(i.qty * i.price - i.disc)}</td></tr>`).join('');
   const charges = s.chargeLines || (s.tax ? [{name:'Tax',amount:s.tax}] : []);

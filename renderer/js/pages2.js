@@ -340,7 +340,11 @@ P.invoice = () => {
   const s = S();
   const check = (key, label, value = true) => `<label class="f ck"><input type="checkbox" data-in="set" data-n="${key}" ${(s[key] ?? value) ? 'checked' : ''}> ${label}</label>`;
   const field = (key, label, type = 'text', value = '') => `<label class="f"><span>${label}</span><input type="${type}" data-in="set" data-n="${key}" value="${esc(s[key] ?? value)}"></label>`;
+  const docTemplates = (s.invoiceDocumentTemplates || []).filter(t => t && t.id);
   view(`${hdr('Invoice templates', '<button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button>')}<div class="card"><p class="mut">Choose the same invoice template used for completed sales and reprints. Changes save automatically, and the A4 preview updates as you edit.</p><h3>Page and style</h3><div class="fg"><label class="f"><span>Template</span><select data-in="set" data-n="invoiceStyle"><option value="a4" ${s.invoiceStyle === 'a4' ? 'selected' : ''}>Business invoice</option><option value="receipt" ${s.invoiceStyle === 'receipt' ? 'selected' : ''}>Compact thermal receipt</option></select></label><label class="f"><span>Paper size</span><input value="A4" readonly aria-readonly="true"><small class="mut">Invoice templates use A4 paper.</small></label><label class="f"><span>Font</span><select data-in="set" data-n="invoiceFont">${['Arial','Georgia','Times New Roman','Courier New','Verdana'].map(x => `<option ${s.invoiceFont === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>${field('invoiceFontSize','Font size (px)','number',14)}${field('invoicePageMargin','Page margin (mm)','number',14)}${field('invoiceLogoWidth','Logo width (px)','number',120)}${field('invoiceTitle','Invoice heading','text','INVOICE')}</div><h3>Show on invoice</h3><div class="fg">${check('invoiceShowLogo','Business logo')}${check('invoiceShowBusiness','Business name')}${check('invoiceShowAddress','Business address')}${check('invoiceShowPhone','Business phone')}${check('invoiceShowEmail','Business email')}${check('invoiceShowCustomer','Customer details')}${check('invoiceShowCashier','Cashier name',false)}${check('invoiceShowDueDate','Due date')}${check('invoiceShowItemCode','Item SKU / code',false)}${check('invoiceShowDiscount','Discount line')}${check('invoiceShowCharges','Tax and charge lines')}${check('invoiceShowPayment','Paid amount')}${check('invoiceShowBalance','Balance due')}${check('invoiceShowNotes','Notes')}${check('invoiceShowTerms','Terms and conditions')}${check('invoiceShowFooter','Footer')}</div><div class="fg" style="margin-top:12px"><label class="f full"><span>Notes</span><textarea data-in="set" data-n="invoiceNotes">${esc(s.invoiceNotes || '')}</textarea></label><label class="f full"><span>Terms &amp; conditions</span><textarea data-in="set" data-n="invoiceTerms">${esc(s.invoiceTerms || '')}</textarea></label><label class="f full"><span>Custom footer (blank uses receipt footer)</span><input data-in="set" data-n="invoiceFooter" value="${esc(s.invoiceFooter || '')}"></label></div><p class="mut sm">Business identity and logo are managed in Settings &amp; Backup → Business identity &amp; receipts. These options only affect the business invoice layout.</p><button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button></div><div class="card" style="margin-top:14px"><h3>Live preview (A4)</h3><p class="mut sm">Sample invoice preview. Your real sales data appears on printed and reprinted invoices.</p><iframe id="invoicePreview" title="Invoice template preview (A4)" style="width:100%;height:720px;border:1px solid var(--bd);border-radius:8px;background:#fff"></iframe></div>`);
+  const selectHost = $('[data-in="set"][data-n="invoiceStyle"]')?.closest('.f');
+  if (selectHost) selectHost.insertAdjacentHTML('afterend', `<label class="f"><span>Saved document template</span><select data-in="set" data-n="invoiceDocumentTemplateId"><option value="">Standard business invoice</option>${docTemplates.map(t => `<option value="${esc(t.id)}" ${s.invoiceDocumentTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select><small class="mut">Manage reusable designs in Quotations → Save as invoice template.</small></label>`);
+  if (docTemplates.length) $('.card .fg')?.insertAdjacentHTML('afterend', `<div class="f full" style="margin-top:10px"><b>Saved templates</b>${docTemplates.map(t => `<span class="badge">${esc(t.name)} <button type="button" class="btn btn-s btn-d" data-act="deleteInvoiceDocTemplate" data-id="${esc(t.id)}">Delete</button></span>`).join(' ')}</div>`);
   refreshInvoicePreview();
 };
 
@@ -523,6 +527,26 @@ function qdHTML(d) {
   <div class="qd-ty"><i>Thank You!</i><span>FOR YOUR BUSINESS!</span></div>
   <div class="qd-ft"><svg style="position:absolute;left:0;top:0" width="38" height="66" viewBox="0 0 38 66"><polygon points="0,0 23,0 0,66" fill="${accent}"/></svg>${fline(QD_SVG.ftpin, esc(String(d.companyAddress || '').replace(/\n/g, ' ')))}${fline(QD_SVG.ftel, esc(d.companyPhone))}${fline(QD_SVG.fmail, esc(d.companyEmail))}${d.companyFootTag ? `<div class="qd-q">${qdNl(d.companyFootTag)}</div>` : ''}</div></div>`;
 }
+function invoiceFromDocumentTemplate(sale, template) {
+  const d = Object.assign(qdBlank('invoice'), JSON.parse(JSON.stringify(template)));
+  const c = sale.customerId ? cust(sale.customerId) : null;
+  const items = (sale.items || []).map(i => ({
+    pid: i.pid || '', sku: i.sku || '', name: [i.name || '', i.imei ? 'IMEI/SN: ' + i.imei : ''].filter(Boolean).join('\n'),
+    qty: num(i.qty), regularPrice: num(i.price), price: r2(num(i.price) - num(i.disc) / Math.max(1, num(i.qty)))
+  }));
+  const totals = {
+    subtotal: num(sale.itemsGross), discount: num(sale.lineDisc) + num(sale.billDisc),
+    charges: (sale.chargeLines || (sale.tax ? [{ name: 'Tax', amount: sale.tax }] : [])).map(x => `${x.name}: ${qm(x.amount)}`),
+    total: num(sale.total), paid: num(sale.paid), balance: Math.max(0, num(sale.total) - num(sale.paid))
+  };
+  const totalTerms = [template.terms || S().invoiceTerms || '', `Subtotal: ${qm(totals.subtotal)}`, ...(totals.discount ? [`Discount: ${qm(totals.discount)}`] : []), ...totals.charges, `Total: ${qm(totals.total)}`, `Paid: ${qm(totals.paid)}`, `Balance: ${qm(totals.balance)}`].filter(Boolean);
+  Object.assign(d, {
+    type: 'invoice', no: sale.no, date: (sale.day || '').slice(0, 10), poNumber: '', dateLabel: 'DATE', m2Label: 'PO NO', numLabel: 'INV #',
+    billName: c?.name || '', billPhone: c?.phone || '', billAddress: c?.address || '', items, terms: totalTerms.join('\n'), bankOn: !!template.bankOn,
+    signName: template.signName || S().docSignName || ''
+  });
+  return qdHTML(d);
+}
 
 /* ---- print and PDF ---- */
 function qdPrint(d) {
@@ -594,6 +618,16 @@ I.quoteSearch = v => { qf.q = v; qeListBody(); };
 
 A.newQuote = () => { qe = { d: qdBlank('quotation'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
 A.newInvoiceDoc = () => { qe = { d: qdBlank('invoice'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
+A.saveQuoteAsInvoiceTemplate = async () => {
+  if (!qe || qe.d.type !== 'invoice') return toast('Open an invoice document design first', 'err');
+  const name = prompt('Template name');
+  if (!name || !name.trim()) return;
+  const row = { ...JSON.parse(JSON.stringify(qe.d)), id: uid(), name: name.trim(), savedAt: nowISO() };
+  delete row.no; delete row.date; delete row.poNumber; delete row.customerId; delete row.customerName; delete row.billName; delete row.billPhone; delete row.billAddress; delete row.items; delete row.status;
+  S().invoiceDocumentTemplates = S().invoiceDocumentTemplates || [];
+  S().invoiceDocumentTemplates.push(row); S().invoiceDocumentTemplateId = row.id;
+  await flush(); toast(`Invoice template “${row.name}” saved for future sales`);
+};
 A.editQuote = (id, el) => { const rec = db.quotations.find(x => x.id === id); if (!rec) return; el?.closest('.ov')?.remove(); qe = { d: qdFromRecord(rec), rec, isNew: false, drafts: {}, dirty: false }; qeMount(); };
 A.delQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || !(await confirmDlg(`Delete ${q.type === 'invoice' ? 'invoice document' : 'quotation'} ${q.no}?`))) return; db.quotations = db.quotations.filter(x => x.id !== id); log('quotation deleted', q.no); save(); P.quotations(); };
 
@@ -614,7 +648,7 @@ A.qePvPdf = (id, el) => { const rec = db.quotations.find(x => x.id === id); if (
 function qeMount() {
   qdEnsureStyle();
   const d = qe.d, q = d.type !== 'invoice';
-  view(`${hdr(qe.isNew ? 'New ' + (q ? 'quotation' : 'invoice document') : 'Edit ' + esc(d.no), '<button class="btn" data-act="qeBack">← Back to list</button><button class="btn btn-p" data-act="qeSave">Save</button>')}
+  view(`${hdr(qe.isNew ? 'New ' + (q ? 'quotation' : 'invoice document') : 'Edit ' + esc(d.no), `<button class="btn" data-act="qeBack">← Back to list</button>${!q ? '<button class="btn" data-act="saveQuoteAsInvoiceTemplate">Save as invoice template</button>' : ''}<button class="btn btn-p" data-act="qeSave">Save</button>`)}
 <div class="qe"><aside class="qe-panel" id="qePanel"></aside><div class="qe-right"><div class="qe-warn" id="qeWarn" hidden>⚠ The content is longer than one A4 page. Shorten the descriptions or terms, or remove items: anything below the page edge is cut off when printing or saving as PDF.</div><main class="qe-stage" id="qeStage"><div class="qe-scaler" id="qeScaler"></div></main></div></div>`);
   qeForm(); qeRender();
 }
@@ -726,7 +760,15 @@ function refreshInvoicePreview() {
   const frame = $('#invoicePreview'); if (!frame) return;
   const sample = { no: 'INV-000123', at: nowISO(), day: ymd(), status: 'done', customerId: '', user: me?.name || 'Cashier', items: [{ name: 'Sample product', qty: 2, price: 1250, disc: 0, imei: '' }], itemsGross: 2500, lineDisc: 0, billDisc: 0, tax: 0, total: 2500, paid: 2500, pays: [{ method: 'Cash', amount: 2500 }], change: 0 };
   const style = S().invoiceStyle === 'receipt' ? 'a4' : S().invoiceStyle;
-  const body = `<div data-invoice-preview="${esc(style)}">${receipt(sample)}</div>`;
-  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:16px;background:#f3f4f6;padding:16px;display:flex;justify-content:center} @media(max-width:600px){body{margin:0;padding:8px}}</style></head><body>${body}</body></html>`;
+  const selectedTemplate = (S().invoiceDocumentTemplates || []).find(t => t.id === S().invoiceDocumentTemplateId);
+  const body = `<div data-invoice-preview="${esc(style)}">${selectedTemplate && style !== 'receipt' ? invoiceFromDocumentTemplate(sample, selectedTemplate) : receipt(sample)}</div>`;
+  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${qdFontCss()}${QD_CSS}html,body{margin:0;background:#f3f4f6;padding:8px}body{display:flex;justify-content:center}[data-invoice-preview] .qd{transform:scale(.72);transform-origin:top center;margin-bottom:-314px}@media(max-width:700px){[data-invoice-preview] .qd{transform:scale(.48);margin-bottom:-583px}}</style></head><body>${body}</body></html>`;
 }
 A.saveInvoiceTemplate = async () => { await flush(); toast('Invoice template saved. New sales and reprints will use it.'); };
+A.deleteInvoiceDocTemplate = async id => {
+  const rows = S().invoiceDocumentTemplates || [], t = rows.find(x => x.id === id);
+  if (!t || !(await confirmDlg(`Delete saved invoice template “${t.name}”?`))) return;
+  S().invoiceDocumentTemplates = rows.filter(x => x.id !== id);
+  if (S().invoiceDocumentTemplateId === id) S().invoiceDocumentTemplateId = '';
+  await flush(); P.invoice(); toast('Invoice template deleted');
+};
