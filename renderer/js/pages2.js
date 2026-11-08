@@ -336,17 +336,7 @@ A.demo = async () => {
 };
 A.rmDemo = async () => { if (!(await confirmDlg('Remove demo products, suppliers and customers? (Real data is untouched. Sales that used demo items stay in history.)'))) return; db.products = db.products.filter(p => !p.demo); db.suppliers = db.suppliers.filter(p => !p.demo); db.customers = db.customers.filter(p => !p.demo); save(); toast('Demo data removed'); };
 
-P.invoice = () => {
-  const s = S();
-  const check = (key, label, value = true) => `<label class="f ck"><input type="checkbox" data-in="set" data-n="${key}" ${(s[key] ?? value) ? 'checked' : ''}> ${label}</label>`;
-  const field = (key, label, type = 'text', value = '') => `<label class="f"><span>${label}</span><input type="${type}" data-in="set" data-n="${key}" value="${esc(s[key] ?? value)}"></label>`;
-  const docTemplates = (s.invoiceDocumentTemplates || []).filter(t => t && t.id);
-  view(`${hdr('Invoice templates', '<button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button>')}<div class="card"><p class="mut">Choose the same invoice template used for completed sales and reprints. Changes save automatically, and the A4 preview updates as you edit.</p><h3>Page and style</h3><div class="fg"><label class="f"><span>Template</span><select data-in="set" data-n="invoiceStyle"><option value="a4" ${s.invoiceStyle === 'a4' ? 'selected' : ''}>Business invoice</option><option value="receipt" ${s.invoiceStyle === 'receipt' ? 'selected' : ''}>Compact thermal receipt</option></select></label><label class="f"><span>Paper size</span><input value="A4" readonly aria-readonly="true"><small class="mut">Invoice templates use A4 paper.</small></label><label class="f"><span>Font</span><select data-in="set" data-n="invoiceFont">${['Arial','Georgia','Times New Roman','Courier New','Verdana'].map(x => `<option ${s.invoiceFont === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>${field('invoiceFontSize','Font size (px)','number',14)}${field('invoicePageMargin','Page margin (mm)','number',14)}${field('invoiceLogoWidth','Logo width (px)','number',120)}${field('invoiceTitle','Invoice heading','text','INVOICE')}</div><h3>Show on invoice</h3><div class="fg">${check('invoiceShowLogo','Business logo')}${check('invoiceShowBusiness','Business name')}${check('invoiceShowAddress','Business address')}${check('invoiceShowPhone','Business phone')}${check('invoiceShowEmail','Business email')}${check('invoiceShowCustomer','Customer details')}${check('invoiceShowCashier','Cashier name',false)}${check('invoiceShowDueDate','Due date')}${check('invoiceShowItemCode','Item SKU / code',false)}${check('invoiceShowDiscount','Discount line')}${check('invoiceShowCharges','Tax and charge lines')}${check('invoiceShowPayment','Paid amount')}${check('invoiceShowBalance','Balance due')}${check('invoiceShowNotes','Notes')}${check('invoiceShowTerms','Terms and conditions')}${check('invoiceShowFooter','Footer')}</div><div class="fg" style="margin-top:12px"><label class="f full"><span>Notes</span><textarea data-in="set" data-n="invoiceNotes">${esc(s.invoiceNotes || '')}</textarea></label><label class="f full"><span>Terms &amp; conditions</span><textarea data-in="set" data-n="invoiceTerms">${esc(s.invoiceTerms || '')}</textarea></label><label class="f full"><span>Custom footer (blank uses receipt footer)</span><input data-in="set" data-n="invoiceFooter" value="${esc(s.invoiceFooter || '')}"></label></div><p class="mut sm">Business identity and logo are managed in Settings &amp; Backup → Business identity &amp; receipts. These options only affect the business invoice layout.</p><button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button></div><div class="card" style="margin-top:14px"><h3>Live preview (A4)</h3><p class="mut sm">Sample invoice preview. Your real sales data appears on printed and reprinted invoices.</p><iframe id="invoicePreview" title="Invoice template preview (A4)" style="width:100%;height:720px;border:1px solid var(--bd);border-radius:8px;background:#fff"></iframe></div>`);
-  const selectHost = $('[data-in="set"][data-n="invoiceStyle"]')?.closest('.f');
-  if (selectHost) selectHost.insertAdjacentHTML('afterend', `<label class="f"><span>Saved document template</span><select data-in="set" data-n="invoiceDocumentTemplateId"><option value="">Standard business invoice</option>${docTemplates.map(t => `<option value="${esc(t.id)}" ${s.invoiceDocumentTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select><small class="mut">Manage reusable designs in Quotations → Save as invoice template.</small></label>`);
-  if (docTemplates.length) $('.card .fg')?.insertAdjacentHTML('afterend', `<div class="f full" style="margin-top:10px"><b>Saved templates</b>${docTemplates.map(t => `<span class="badge">${esc(t.name)} <button type="button" class="btn btn-s btn-d" data-act="deleteInvoiceDocTemplate" data-id="${esc(t.id)}">Delete</button></span>`).join(' ')}</div>`);
-  refreshInvoicePreview();
-};
+/* The Invoice page (P.invoice) is defined in the "INVOICE: ONE BUSINESS INVOICE DESIGN" section at the end of this file. */
 
 /* ================= QUOTATIONS & INVOICE DOCUMENTS ================= */
 /* Editor (left) + live A4 preview (right), Print and Download PDF.
@@ -461,7 +451,7 @@ const qdItem = p => p
 function qdBlank(type) {
   const o = S(), inv = type === 'invoice', t = inv ? 'invoice' : 'quotation';
   const until = new Date(); until.setDate(until.getDate() + 15);
-  return {
+  const d = {
     id: '', type: t, no: qdPeekNo(t), date: ymd(), validUntil: inv ? '' : ymd(until), poNumber: '',
     dateLabel: 'DATE', m2Label: inv ? 'PO NO' : 'VALID UNTIL', numLabel: inv ? 'INV #' : 'QUOTE #',
     customerId: '', customerName: '', billName: '', billPhone: '', billAddress: '',
@@ -470,6 +460,7 @@ function qdBlank(type) {
     terms: o.invoiceTerms || '', bankOn: false, accNo: '', accName: '', bank: '', branch: '',
     items: [qdItem()], status: 'draft'
   };
+  return inv ? ivApply(d) : d;       // invoices start from the saved business invoice design
 }
 function qdFromRecord(rec) {
   const type = rec.type === 'invoice' ? 'invoice' : 'quotation', inv = type === 'invoice';
@@ -542,7 +533,7 @@ function invoiceFromDocumentTemplate(sale, template) {
   const totalTerms = [template.terms || S().invoiceTerms || '', `Subtotal: ${qm(totals.subtotal)}`, ...(totals.discount ? [`Discount: ${qm(totals.discount)}`] : []), ...totals.charges, `Total: ${qm(totals.total)}`, `Paid: ${qm(totals.paid)}`, `Balance: ${qm(totals.balance)}`].filter(Boolean);
   Object.assign(d, {
     type: 'invoice', no: sale.no, date: (sale.day || '').slice(0, 10), poNumber: '', dateLabel: 'DATE', m2Label: 'PO NO', numLabel: 'INV #',
-    billName: c?.name || '', billPhone: c?.phone || '', billAddress: c?.address || '', items, terms: totalTerms.join('\n'), bankOn: !!template.bankOn,
+    billName: c?.name || 'Walk-in customer', billPhone: c?.phone || '', billAddress: c?.address || '', items, terms: totalTerms.join('\n'), bankOn: !!template.bankOn,
     signName: template.signName || S().docSignName || ''
   });
   return qdHTML(d);
@@ -620,13 +611,8 @@ A.newQuote = () => { qe = { d: qdBlank('quotation'), rec: null, isNew: true, dra
 A.newInvoiceDoc = () => { qe = { d: qdBlank('invoice'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
 A.saveQuoteAsInvoiceTemplate = async () => {
   if (!qe || qe.d.type !== 'invoice') return toast('Open an invoice document design first', 'err');
-  const name = prompt('Template name');
-  if (!name || !name.trim()) return;
-  const row = { ...JSON.parse(JSON.stringify(qe.d)), id: uid(), name: name.trim(), savedAt: nowISO() };
-  delete row.no; delete row.date; delete row.poNumber; delete row.customerId; delete row.customerName; delete row.billName; delete row.billPhone; delete row.billAddress; delete row.items; delete row.status;
-  S().invoiceDocumentTemplates = S().invoiceDocumentTemplates || [];
-  S().invoiceDocumentTemplates.push(row); S().invoiceDocumentTemplateId = row.id;
-  await flush(); toast(`Invoice template “${row.name}” saved for future sales`);
+  if (!(await confirmDlg('Use this design as the business invoice template? It replaces the current one and is used for all new sales invoices and reprints.', 'Save as template'))) return;
+  await ivStore(qe.d); iv = null; toast('Business invoice template saved. It is now used for sales and reprints.');
 };
 A.editQuote = (id, el) => { const rec = db.quotations.find(x => x.id === id); if (!rec) return; el?.closest('.ov')?.remove(); qe = { d: qdFromRecord(rec), rec, isNew: false, drafts: {}, dirty: false }; qeMount(); };
 A.delQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || !(await confirmDlg(`Delete ${q.type === 'invoice' ? 'invoice document' : 'quotation'} ${q.no}?`))) return; db.quotations = db.quotations.filter(x => x.id !== id); log('quotation deleted', q.no); save(); P.quotations(); };
@@ -756,19 +742,126 @@ A.qeSave = () => {
 };
 
 A.convertQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || q.status === 'converted' || q.type === 'invoice') return; if (!(await confirmDlg(`Convert ${q.no} to a sale? Stock and payment will be handled in Point of Sale.`, 'Continue'))) return; if (cart.length) return toast('Finish or hold the current bill before loading a quotation', 'err'); const missing = q.items.filter(i => i.pid && !prod(i.pid)); if (missing.length) return toast('A quoted product is no longer in the product list', 'err'); for (const i of q.items) { if (!i.pid) return toast('Custom quotation items cannot be converted to a stock sale. Replace them with products first.', 'err'); const p = prod(i.pid); if (p.tracked || num(i.qty) > p.stock) return toast(`${p.name} is tracked by serial number or has insufficient stock`, 'err'); } cart = q.items.map(i => { const p = prod(i.pid), regular = num(p.price), quoted = num(i.price); return { pid:i.pid, name:p.name, qty:num(i.qty), price:regular, disc:r2(Math.max(regular - quoted, 0) * num(i.qty)), cost:p.cost || 0, dev:null, imei:'', warrantyM:p.warranty || 0 }; }); ps.cust = q.customerId || ''; ps.customerReady = !!cust(ps.cust); ps.customerPhone = cust(ps.cust)?.phone || ''; ps.dVal = 0; q.status = 'accepted'; q.acceptedAt = nowISO(); save(); nav('pos'); toast('Quote loaded into Point of Sale. Review tax and complete payment to create the sale.'); };
-function refreshInvoicePreview() {
-  const frame = $('#invoicePreview'); if (!frame) return;
-  const sample = { no: 'INV-000123', at: nowISO(), day: ymd(), status: 'done', customerId: '', user: me?.name || 'Cashier', items: [{ name: 'Sample product', qty: 2, price: 1250, disc: 0, imei: '' }], itemsGross: 2500, lineDisc: 0, billDisc: 0, tax: 0, total: 2500, paid: 2500, pays: [{ method: 'Cash', amount: 2500 }], change: 0 };
-  const style = S().invoiceStyle === 'receipt' ? 'a4' : S().invoiceStyle;
-  const selectedTemplate = (S().invoiceDocumentTemplates || []).find(t => t.id === S().invoiceDocumentTemplateId);
-  const body = `<div data-invoice-preview="${esc(style)}">${selectedTemplate && style !== 'receipt' ? invoiceFromDocumentTemplate(sample, selectedTemplate) : receipt(sample)}</div>`;
-  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${qdFontCss()}${QD_CSS}html,body{margin:0;background:#f3f4f6;padding:8px}body{display:flex;justify-content:center}[data-invoice-preview] .qd{transform:scale(.72);transform-origin:top center;margin-bottom:-314px}@media(max-width:700px){[data-invoice-preview] .qd{transform:scale(.48);margin-bottom:-583px}}</style></head><body>${body}</body></html>`;
+/* ================= INVOICE: ONE BUSINESS INVOICE DESIGN =================
+   The "Business invoice" is the same A4 design that the Quotations section uses for its Invoice tab.
+   It is edited on this page and saved once in settings.invoiceDesign (additive setting, read defensively).
+   Every sale invoice, reprint and the Quotations → Invoice tab start from that one saved design.
+   Older data: if settings.invoiceDesign does not exist yet, the template the shop had already selected
+   (settings.invoiceDocumentTemplates / invoiceDocumentTemplateId) is used, so nothing changes visually
+   for shops that already saved one. The older fields are left untouched. */
+const IV_FIELDS = [...QE_COMPANY, 'dateLabel', 'm2Label', 'numLabel', 'terms', 'bankOn', 'accNo', 'accName', 'bank', 'branch'];
+const IV_IMAGES = ['docLogo', 'docBulb', 'docSign'];
+const IV_PRINT_CSS = '@page{size:A4;margin:0}.iv-wrap{max-width:100%;overflow:auto}@media print{html,body{height:1122px;overflow:hidden}.iv-wrap{overflow:visible}}';
+let iv = null;                         // open design editor: { d: working copy, dirty }
+let ivMode = 'a4';
+
+function ivSource() {                  // saved design, or the template an older version had selected, or null
+  const o = S();
+  if (o.invoiceDesign && typeof o.invoiceDesign === 'object') return o.invoiceDesign;
+  return (o.invoiceDocumentTemplates || []).find(t => t && t.id && t.id === o.invoiceDocumentTemplateId) || null;
 }
-A.saveInvoiceTemplate = async () => { await flush(); toast('Invoice template saved. New sales and reprints will use it.'); };
-A.deleteInvoiceDocTemplate = async id => {
-  const rows = S().invoiceDocumentTemplates || [], t = rows.find(x => x.id === id);
-  if (!t || !(await confirmDlg(`Delete saved invoice template “${t.name}”?`))) return;
-  S().invoiceDocumentTemplates = rows.filter(x => x.id !== id);
-  if (S().invoiceDocumentTemplateId === id) S().invoiceDocumentTemplateId = '';
-  await flush(); P.invoice(); toast('Invoice template deleted');
+function ivApply(d) {                  // lays the saved design over a blank invoice document
+  const src = ivSource();
+  if (src) IV_FIELDS.forEach(k => { if (src[k] !== undefined && src[k] !== null) d[k] = src[k]; });
+  return d;
+}
+const invoiceDesign = () => qdBlank('invoice');
+
+/* The business invoice used by sales, reprints and the Sales window. It carries its own CSS because the print
+   job is rendered in a separate window that does not share the app's style sheets. */
+invoiceDocument = s => `<style>${qdFontCss()}${QD_CSS}${IV_PRINT_CSS}</style><div class="iv-wrap">${invoiceFromDocumentTemplate(s, invoiceDesign())}</div>`;
+
+const ivSample = () => ({
+  no: 'INV-000123', at: nowISO(), day: ymd(), status: 'done', customerId: '', user: me?.name || 'Cashier',
+  items: [{ name: 'Sample product A', qty: 2, price: 1250, disc: 0, imei: '' }, { name: 'Sample product B', qty: 1, price: 4500, disc: 250, imei: '' }],
+  itemsGross: 7000, lineDisc: 250, billDisc: 0, tax: 0, total: 6750, paid: 6750, pays: [{ method: 'Cash', amount: 6750 }], change: 0
+});
+function ivStore(d) {                  // saves the working design as THE business invoice template
+  const row = {}; IV_FIELDS.forEach(k => { row[k] = d[k]; });
+  row.savedAt = nowISO(); row.savedBy = me?.name || '';
+  const o = S(); o.invoiceDesign = row;
+  o.docSub = row.companySub || ''; o.docFootTag = row.companyFootTag || ''; o.docSignName = row.signName || '';   // same memory the Quotations editor uses
+  log('invoice template', 'saved'); return flush();
+}
+
+P.invoice = () => {
+  qdEnsureStyle();
+  if (!iv || !iv.dirty) iv = { d: qdBlank('invoice'), dirty: false };      // an unsaved draft is kept until saved or reset
+  ivMount();
 };
+function ivMount() {
+  const a4 = S().invoiceStyle !== 'receipt'; ivMode = a4 ? 'a4' : 'receipt';
+  const typeSel = `<label class="qe-l">Invoice type<select data-in="set" data-n="invoiceStyle"><option value="a4" ${a4 ? 'selected' : ''}>Business invoice (A4)</option><option value="receipt" ${a4 ? '' : 'selected'}>Compact thermal receipt</option></select></label>`;
+  if (!a4) {
+    view(`${hdr('Invoice template')}<div class="card" style="max-width:460px">${typeSel}<p class="qe-note">The thermal receipt is configured in Settings &amp; Backup → Business identity &amp; receipts. Switch to “Business invoice (A4)” to design the invoice used in Quotations.</p></div><div class="card" style="margin-top:14px"><h3>Receipt preview</h3><div style="max-width:340px;margin:8px auto;background:#fff;color:#000;padding:10px;border:1px solid var(--bd)">${receipt(ivSample())}</div></div>`);
+    return;
+  }
+  view(`${hdr('Invoice template', '<button class="btn" data-act="ivDefault">Reset to default</button><button class="btn btn-p" data-act="ivSave">Save template</button>')}
+<div class="qe"><aside class="qe-panel" id="ivPanel"></aside><div class="qe-right"><div class="qe-warn" id="ivWarn" hidden>⚠ The content is longer than one A4 page. Shorten the terms or other text: anything below the page edge is cut off when printing.</div><main class="qe-stage" id="ivStage"><div class="qe-scaler" id="ivScaler"></div></main></div></div>`);
+  ivForm(); ivRender();
+}
+const ivF = (label, key, o = {}) => {
+  const v = iv.d[key] ?? '';
+  return `<label class="qe-l">${label}${o.area ? `<textarea data-in="iv" data-k="${key}" rows="${o.rows || 2}">${esc(v)}</textarea>` : `<input data-in="iv" data-k="${key}" type="${o.type || 'text'}" value="${esc(v)}">`}</label>`;
+};
+function ivForm() {
+  const panel = $('#ivPanel'); if (!panel || !iv) return;
+  const st = panel.scrollTop, d = iv.d, o = S();
+  const imgBtn = (k, label) => o[k] ? `<button type="button" class="qe-x" data-act="ivImgClear" data-id="${k}">Remove ${label}</button>` : '';
+  panel.innerHTML = `<fieldset class="qe-fs"><legend>Invoice type</legend><label class="qe-l"><select data-in="set" data-n="invoiceStyle"><option value="a4" selected>Business invoice (A4)</option><option value="receipt">Compact thermal receipt</option></select></label>
+  <p class="qe-note">This is the same invoice design shown in Quotations → Invoice. Save it once and every new sale invoice and reprint uses it. The preview uses sample items.</p></fieldset>
+<fieldset class="qe-fs"><legend>Your company</legend>${ivF('Company name', 'companyName')}${ivF('Address', 'companyAddress', { area: 1 })}
+  <div class="qe-row2">${ivF('Phone', 'companyPhone')}${ivF('Email', 'companyEmail')}</div>
+  ${ivF('Header tagline', 'companyTagline', { area: 1 })}${ivF('Header subtitle', 'companySub')}${ivF('Footer text (right)', 'companyFootTag', { area: 1 })}${ivF('Signatory name', 'signName')}
+  <div class="qe-row3 eq" style="margin-top:8px"><label class="qe-l">Logo<input type="file" accept="image/png,image/jpeg,image/webp" data-iimg="docLogo"></label><label class="qe-l">Header image<input type="file" accept="image/png,image/jpeg,image/webp" data-iimg="docBulb"></label><label class="qe-l">Signature<input type="file" accept="image/png,image/jpeg,image/webp" data-iimg="docSign"></label></div>
+  <div class="qe-imgs">${imgBtn('docLogo', 'logo')}${imgBtn('docBulb', 'header image')}${imgBtn('docSign', 'signature')}</div>
+  <p class="qe-note">Images are saved once and reused on every document. With no logo chosen, the logo from Settings is used.</p></fieldset>
+<fieldset class="qe-fs"><legend>Field labels</legend><div class="qe-row3 eq">${ivF('Date', 'dateLabel')}${ivF('PO / reference', 'm2Label')}${ivF('Number', 'numLabel')}</div></fieldset>
+<fieldset class="qe-fs"><legend>Terms &amp; conditions (one per line)</legend>${ivF('', 'terms', { area: 1, rows: 5 })}<p class="qe-note">Sale invoices also list subtotal, charges, total, paid and balance under the terms.</p></fieldset>
+<fieldset class="qe-fs"><legend>Bank details</legend><label class="qe-l qe-ck"><input type="checkbox" data-in="iv" data-k="bankOn" ${d.bankOn ? 'checked' : ''}> Show bank details</label>${ivF('Account number', 'accNo')}${ivF('Account name', 'accName')}<div class="qe-row2">${ivF('Bank', 'bank')}${ivF('Branch', 'branch')}</div></fieldset>
+<div class="qe-actions"><button type="button" class="btn btn-p" data-act="ivSave">Save template</button><button type="button" class="btn" data-act="ivReset">Discard changes</button></div>`;
+  panel.scrollTop = st;
+}
+function ivRender() {
+  const sc = $('#ivScaler'); if (!sc || !iv) return;
+  sc.innerHTML = invoiceFromDocumentTemplate(ivSample(), iv.d);
+  ivFit();
+  const w = $('#ivWarn'); if (w) w.hidden = !qdOverflow(sc);
+}
+const ivFit = () => qdFit($('#ivStage'), $('#ivScaler'), 30);
+window.addEventListener('resize', ivFit);
+
+I.iv = (v, el) => { if (!iv) return; const k = el.dataset.k; if (!IV_FIELDS.includes(k)) return; iv.d[k] = k === 'bankOn' ? !!v : v; iv.dirty = true; ivRender(); };
+document.addEventListener('change', async e => {                 // company images (logo / header image / signature)
+  const k = e.target?.dataset?.iimg, f = e.target?.files?.[0]; if (!k || !f || !iv || !IV_IMAGES.includes(k)) return;
+  try { S()[k] = await browserLogoData(f); save(); ivForm(); ivRender(); toast('Image saved'); }
+  catch (err) { toast(err.message || 'Could not load the image', 'err'); }
+  e.target.value = '';
+});
+A.ivImgClear = id => { if (!iv || !IV_IMAGES.includes(id)) return; S()[id] = ''; save(); ivForm(); ivRender(); };
+A.ivSave = async () => {
+  if (!iv) return; const d = iv.d;
+  if (!String(d.companyName || '').trim()) return toast('Enter the company name', 'err');
+  ['companyName', 'companyAddress', 'companyPhone', 'companyEmail', 'companyTagline', 'companySub', 'companyFootTag', 'signName'].forEach(k => { d[k] = String(d[k] || '').trim(); });
+  await ivStore(d); iv.dirty = false;
+  toast('Invoice template saved. New sales, reprints and Quotations → Invoice will use it.');
+};
+A.ivReset = async () => {
+  if (!iv) return;
+  if (iv.dirty && !(await confirmDlg('Discard your changes and reload the saved invoice template?', 'Discard'))) return;
+  iv = { d: qdBlank('invoice'), dirty: false }; ivMount();
+};
+A.ivDefault = async () => {
+  if (!iv || !(await confirmDlg('Fill the form with the default invoice design from your Settings? Nothing changes until you press Save template.', 'Reset'))) return;
+  const o = S(), keepDesign = o.invoiceDesign, keepId = o.invoiceDocumentTemplateId;
+  o.invoiceDesign = null; o.invoiceDocumentTemplateId = '';
+  const d = qdBlank('invoice');
+  o.invoiceDesign = keepDesign; o.invoiceDocumentTemplateId = keepId;
+  iv = { d, dirty: true }; ivMount();
+};
+/* Called by the generic settings handler (I.set) while this page is open. */
+function refreshInvoicePreview() {
+  if (current !== 'invoice') return;
+  const want = S().invoiceStyle === 'receipt' ? 'receipt' : 'a4';
+  if (want !== ivMode) P.invoice(); else if (iv) ivRender();
+}
