@@ -266,14 +266,14 @@ P.settings = async () => {
 <p class="mut sm">Folder in use: ${esc(b.dir)}</p>${tbl(['When', 'Type', 'Result'], b.log.map(l => `<tr><td>${dt(l.at)}</td><td>${l.kind}</td><td><span class="badge ${l.ok ? 'b-ok' : 'b-bad'}">${l.ok ? 'OK' : 'FAILED'}</span> <small>${esc(l.ok ? l.file : l.error)}</small></td></tr>`), 'No backups yet')}`; }
   const f = (k, l, t = 'text') => `<label class="f"><span>${l}</span><input data-in="set" data-n="${k}" type="${t}" value="${esc(s[k])}"></label>`;
   const lic = licenseInfo ? `<p class="mut">Status: <b>${licenseInfo.type === 'permanent' ? 'Permanent' : licenseInfo.active ? `${licenseInfo.type === 'trial' ? '24-hour trial' : licenseInfo.type === 'monthly' ? '30-day license' : '7-day license'} · expires ${dt(licenseInfo.expiresAt)}` : 'Expired'}</b></p>` : '<p class="mut">License management is available in the desktop app.</p>';
-  view(`${hdr('Settings & Backup')}<div class="grid2"><div class="card"><h3>Business identity & receipts</h3><div class="fg">${f('business', 'Business / POS name')}${f('tagline', 'Slogan / tagline')}${f('description', 'Business description')}${f('phone', 'Phone')}${f('address', 'Address')}${f('email', 'Email')}${f('currency', 'Currency symbol')}<div class="f full"><span>Business logo</span><div style="display:flex;align-items:center;gap:12px"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Logo preview" style="width:56px;height:56px;object-fit:contain;background:#fff;border-radius:8px"><button class="btn" data-act="pickLogo">Choose logo…</button>${s.logoData ? '<button class="btn btn-d" data-act="removeLogo">Remove</button>' : ''}</div></div><div class="f full"><span>Authorized signature image (for quotation / invoice documents)</span><div style="display:flex;align-items:center;gap:12px">${s.signatureData ? `<img src="${esc(s.signatureData)}" alt="Signature preview" style="width:130px;height:48px;object-fit:contain;background:#fff;border:1px solid var(--bd);border-radius:6px">` : '<span class="mut">No signature saved</span>'}<button class="btn" data-act="pickSignature">Choose signature…</button>${s.signatureData ? '<button class="btn btn-d" data-act="removeSignature">Remove</button>' : ''}</div></div>${f('invPrefix', 'Invoice prefix')}${f('purPrefix', 'Purchase prefix')}${f('lowStock', 'Default low-stock level', 'number')}${f('maxDiscountPct', 'Max cashier discount %', 'number')}${f('payMethods', 'Payment methods (comma separated)')}${f('attendanceStart', 'Attendance start time', 'time')}<label class="f"><span>Invoice / receipt size</span><select data-in="set" data-n="receiptSize">${[['80','80 mm thermal'],['58','58 mm thermal'],['A4','A4 sheet'],['Letter','Letter sheet']].map(([x, label]) => `<option value="${x}" ${x == s.receiptSize ? 'selected' : ''}>${label}</option>`).join('')}</select></label>${f('footer', 'Receipt footer')}${f('returnPolicy', 'Return policy')}${f('warranty', 'Warranty text')}</div></div>
+  view(`${hdr('Settings & Backup')}<div class="grid2"><div class="card"><h3>Business identity & receipts</h3><div class="fg">${f('business', 'Business / POS name')}${f('tagline', 'Slogan / tagline')}${f('description', 'Business description')}${f('phone', 'Phone')}${f('address', 'Address')}${f('email', 'Email')}${f('currency', 'Currency symbol')}<div class="f full"><span>Business logo</span><div style="display:flex;align-items:center;gap:12px"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Logo preview" style="width:56px;height:56px;object-fit:contain;background:#fff;border-radius:8px"><button class="btn" data-act="pickLogo">Choose logo…</button>${s.logoData ? '<button class="btn btn-d" data-act="removeLogo">Remove</button>' : ''}</div></div><div class="f full"><span>Authorized signature image (for quotation / invoice documents)</span><div style="display:flex;align-items:center;gap:12px">${s.signatureData ? `<img src="${esc(s.signatureData)}" alt="Signature preview" style="width:130px;height:48px;object-fit:contain;background:#fff;border:1px solid var(--bd);border-radius:6px">` : '<span class="mut">No signature saved</span>'}<button class="btn" data-act="pickSignature">Choose signature…</button>${s.signatureData ? '<button class="btn btn-d" data-act="removeSignature">Remove</button>' : ''}</div></div>${f('invPrefix', 'Invoice prefix')}${f('purPrefix', 'Purchase prefix')}${f('lowStock', 'Default low-stock level', 'number')}${f('maxDiscountPct', 'Max cashier discount %', 'number')}${f('payMethods', 'Payment methods (comma separated)')}${f('attendanceStart', 'Attendance start time', 'time')}<label class="f"><span>Invoice / receipt size</span><select data-in="set" data-n="receiptSize">${[['auto','Auto (fits any printer paper)'],['80','80 mm thermal'],['58','58 mm thermal'],['custom','Custom roll width'],['A4','A4 sheet'],['Letter','Letter sheet']].map(([x, label]) => `<option value="${x}" ${x == s.receiptSize ? 'selected' : ''}>${label}</option>`).join('')}</select></label>${f('footer', 'Receipt footer')}${f('returnPolicy', 'Return policy')}${f('warranty', 'Warranty text')}</div></div>
 <div class="card"><h3>Appearance</h3><div class="fg"><label class="f"><span>Theme colour</span><input type="color" data-in="set" data-n="accent" value="${s.accent}" style="height:40px"></label><label class="f ck"><input type="checkbox" data-in="set" data-n="dark" ${s.dark ? 'checked' : ''}> Dark mode</label></div><br><h3>Customer display</h3><p class="mut">Show the live basket, discounts, tax and total in a separate customer-facing window.</p><label class="f ck"><input type="checkbox" data-in="customerDisplay" ${s.customerDisplay ? 'checked' : ''}> Enable customer display</label><br><button class="btn btn-p" data-act="openCustomerDisplay" ${s.customerDisplay ? '' : 'disabled'}>Open customer display</button><br><br><h3>License</h3>${lic}<form id="licenseSettings" class="fg"><label class="f"><span>License key</span><input name="key" autocomplete="off" required placeholder="Enter license key"></label><button class="btn btn-p" type="submit">Activate license</button></form><br><h3>Data</h3><p class="mut sm">Data file: ${esc(dp || 'browser storage')}</p><button class="btn" data-act="exportAll">Export all data (JSON)</button> <button class="btn" data-act="importAll">Import data (JSON)</button><br><br><button class="btn" data-act="demo">Load demo data</button> <button class="btn" data-act="rmDemo">Remove demo data</button></div></div><br><div class="card"><h3>System update</h3><p class="mut">Updates are checked and downloaded only when you choose Check for updates. Screen updates are verified before they are offered; choose Restart to apply update when you are ready. Desktop app updates are installed only after you choose Install and restart. Your shop data stays on this computer.</p><label class="f full"><span>Update server URL</span><input id="updateManifestUrl" type="url" placeholder="https://pos360live.vercel.app/updates/latest.json" value="${esc(s.updateManifestUrl || '')}"></label><br><button class="btn" data-act="checkUpdate">Check for updates</button> <button class="btn btn-p" id="applyUiUpdateBtn" data-act="applyUiUpdate" hidden>Restart to apply update</button> <button class="btn btn-p" data-act="installUpdate" hidden>Install and restart</button><div id="updateStatus" class="mut sm" style="margin-top:10px"></div><p class="mut sm">Update test feature: build 2026-11-03 13:00</p></div><br><div class="card"><h3>Backup & Restore</h3>${bk}</div>`);
   const receiptSizeField = $('[data-in="set"][data-n="receiptSize"]')?.closest('.f');
   receiptSizeField?.insertAdjacentHTML('afterend', `${f('receiptPadding', 'Print padding (mm)', 'number')}${f('receiptOffsetX', 'Manual horizontal offset (mm)', 'number')}${f('receiptOffsetY', 'Manual vertical offset (mm)', 'number')}<label class="f ck"><input type="checkbox" data-in="set" data-n="receiptAutoAlign" ${s.receiptAutoAlign !== false ? 'checked' : ''}> Auto center invoice</label><div class="f full"><small class="mut">Use the offsets to correct printer-specific feed or margin differences.</small></div>`);
   window.updateUi?.refreshStatus();
   $('#licenseSettings')?.addEventListener('submit', async e => { e.preventDefault(); const r = await window.posApi.activateLicense(e.target.elements.key.value); if (!r.ok) return toast(r.error, 'err'); licenseInfo = r.status; toast(licenseInfo.type === 'permanent' ? 'System permanently unlocked' : licenseInfo.type === 'monthly' ? 'System unlocked for 30 days' : 'System unlocked for 7 days'); P.settings(); });
 };
-I.set = (v, el) => { const k = el.dataset.n; S()[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? num(v) : v; save(); applyTheme(); if (['business', 'tagline', 'description', 'logoData', 'footer', 'accent', 'currency'].includes(k)) syncBranding(); if (current === 'invoice' && k.startsWith('invoice')) refreshInvoicePreview(); };
+I.set = (v, el) => { const k = el.dataset.n; S()[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? num(v) : v; save(); applyTheme(); if (['business', 'tagline', 'description', 'logoData', 'footer', 'accent', 'currency'].includes(k)) syncBranding(); if (current === 'invoice' && (k.startsWith('invoice') || k.startsWith('receipt'))) refreshInvoicePreview(); };
 I.customerDisplay = v => { S().customerDisplay = !!v; save(); const button = $('[data-act="openCustomerDisplay"]'); if (button) button.disabled = !v; if (!window.posApi) return toast('Customer display is available in the desktop app', 'err'); if (v) { window.posApi.openCustomerDisplay(); syncBranding(); } else window.posApi.closeCustomerDisplay(); };
 A.openCustomerDisplay = () => { if (S().customerDisplay && window.posApi) { window.posApi.openCustomerDisplay(); syncBranding(); } };
 async function browserLogoData(file) {
@@ -417,6 +417,7 @@ const QD_CSS = `
 .qd .qd-tot .qd-r{display:flex;justify-content:space-between;align-items:center;height:43px;padding:0 12px;font-weight:700;border-bottom:1px solid #cddff5}
 .qd .qd-tot .qd-g{background:var(--qd-accent-dark);color:#fff;height:52px;border:0}
 .qd .qd-tot .qd-g em{font-style:normal;font-size:19px}
+.qd .qd-tot.qd-sale .qd-r{height:30px;font-size:12px}.qd .qd-tot.qd-sale .qd-g{height:44px}.qd .qd-tot.qd-sale .qd-g em{font-size:17px}
 .qd .qd-sig{position:absolute;left:36px;bottom:76px;width:190px;font-size:14px;line-height:1.25}
 .qd .qd-sig img{display:block;height:58px;margin-left:8px;object-fit:contain}
 .qd .qd-sig hr{border:0;border-top:1.5px solid var(--qd-accent);margin:2px 0 4px}
@@ -511,12 +512,19 @@ function qdHTML(d) {
   <div class="qd-bottom" style="grid-template-columns:${cols}">
     <div class="qd-tc"><h5>${QD_SVG.doc}${q ? 'Terms &amp; Conditions:' : 'TERMS &amp; CONDITIONS'}</h5><ul>${qdLines(d.terms).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>
     ${bank}
-    <div class="qd-tot"><div class="qd-r"><span>ORIGINAL TOTAL (${cur})</span><span>${qm(orig)}</span></div><div class="qd-r"><span>DISCOUNT AMOUNT (${cur})</span><span>${qm(orig - tot)}</span></div><div class="qd-r qd-g"><span style="font-size:15px">TOTAL (${cur})</span><em>${cur} ${qm(tot)}/=</em></div></div>
+    ${qdTotalsBox(d, cur, orig, tot)}
   </div>
   <div class="qd-sig">${sign ? `<img src="${esc(sign)}" alt="">` : '<div style="height:58px"></div>'}<hr>Authorized Signatory<b>${esc(d.signName || d.companyName)}</b></div>
   ${q ? '' : '<div class="qd-csig"><div class="qd-cspace"></div><hr>Customer Signature<div class="qd-cname"></div></div>'}
   <div class="qd-ty"><i>Thank You!</i><span>FOR YOUR BUSINESS!</span></div>
   <div class="qd-ft"><svg style="position:absolute;left:0;top:0" width="38" height="66" viewBox="0 0 38 66"><polygon points="0,0 23,0 0,66" fill="${accent}"/></svg>${fline(QD_SVG.ftpin, esc(String(d.companyAddress || '').replace(/\n/g, ' ')))}${fline(QD_SVG.ftel, esc(d.companyPhone))}${fline(QD_SVG.fmail, esc(d.companyEmail))}${d.companyFootTag ? `<div class="qd-q">${qdNl(d.companyFootTag)}</div>` : ''}</div></div>`;
+}
+/* Totals box. Quotations show original total / discount / total. A sale invoice passes d.totals and gets the real
+   sale figures (subtotal, discount, tax and charges, total, paid, change, balance) here instead of in the terms. */
+function qdTotalsBox(d, cur, orig, tot) {
+  const T = d.totals, row = (a, b, cls = '') => `<div class="qd-r ${cls}"><span>${a}</span><span>${b}</span></div>`;
+  if (!T) return `<div class="qd-tot"><div class="qd-r"><span>ORIGINAL TOTAL (${cur})</span><span>${qm(orig)}</span></div><div class="qd-r"><span>DISCOUNT AMOUNT (${cur})</span><span>${qm(orig - tot)}</span></div><div class="qd-r qd-g"><span style="font-size:15px">TOTAL (${cur})</span><em>${cur} ${qm(tot)}/=</em></div></div>`;
+  return `<div class="qd-tot qd-sale">${row(`SUBTOTAL (${cur})`, qm(T.subtotal))}${T.discount > 0.005 ? row(`DISCOUNT (${cur})`, '-' + qm(T.discount)) : ''}${(T.charges || []).map(x => row(`${esc(x.name)} (${cur})`, qm(x.amount))).join('')}<div class="qd-r qd-g"><span style="font-size:15px">TOTAL (${cur})</span><em>${cur} ${qm(T.total)}/=</em></div>${row(`PAID (${cur})`, qm(T.paid))}${T.change > 0.005 ? row(`CHANGE (${cur})`, qm(T.change)) : ''}${row(`BALANCE DUE (${cur})`, qm(T.balance))}</div>`;
 }
 function invoiceFromDocumentTemplate(sale, template) {
   const d = Object.assign(qdBlank('invoice'), JSON.parse(JSON.stringify(template)));
@@ -527,22 +535,19 @@ function invoiceFromDocumentTemplate(sale, template) {
   }));
   const totals = {
     subtotal: num(sale.itemsGross), discount: num(sale.lineDisc) + num(sale.billDisc),
-    charges: (sale.chargeLines || (sale.tax ? [{ name: 'Tax', amount: sale.tax }] : [])).map(x => `${x.name}: ${qm(x.amount)}`),
-    total: num(sale.total), paid: num(sale.paid), balance: Math.max(0, num(sale.total) - num(sale.paid))
+    charges: (sale.chargeLines || (sale.tax ? [{ name: 'Tax', amount: sale.tax }] : [])).map(x => ({ name: x.name, amount: num(x.amount) })),
+    total: num(sale.total), paid: num(sale.paid), change: num(sale.change), balance: Math.max(0, num(sale.total) - num(sale.paid))
   };
-  const totalTerms = [template.terms || S().invoiceTerms || '', `Subtotal: ${qm(totals.subtotal)}`, ...(totals.discount ? [`Discount: ${qm(totals.discount)}`] : []), ...totals.charges, `Total: ${qm(totals.total)}`, `Paid: ${qm(totals.paid)}`, `Balance: ${qm(totals.balance)}`].filter(Boolean);
   Object.assign(d, {
     type: 'invoice', no: sale.no, date: (sale.day || '').slice(0, 10), poNumber: '', dateLabel: 'DATE', m2Label: 'PO NO', numLabel: 'INV #',
-    billName: c?.name || 'Walk-in customer', billPhone: c?.phone || '', billAddress: c?.address || '', items, terms: totalTerms.join('\n'), bankOn: !!template.bankOn,
+    billName: c?.name || 'Walk-in customer', billPhone: c?.phone || '', billAddress: c?.address || '', items, terms: template.terms ?? S().invoiceTerms ?? '', totals, bankOn: !!template.bankOn,
     signName: template.signName || S().docSignName || ''
   });
   return qdHTML(d);
 }
 
 /* ---- print and PDF ---- */
-function qdPrint(d) {
-  printHTML(qdHTML(d), qdFontCss() + QD_CSS + '@page{size:A4;margin:0}html,body{margin:0;background:#fff;height:1122px;overflow:hidden}', qdFileName(d), { paperSize: 'A4' });
-}
+function qdPrint(d) { printBizDoc(qdHTML(d), qdFileName(d)); }
 let qdPdfLib = null;
 function qdLoadPdfLib() {                      // loaded only when first needed, so the app starts as fast as before
   if (window.html2pdf) return Promise.resolve();
@@ -742,18 +747,25 @@ A.qeSave = () => {
 };
 
 A.convertQuote = async id => { const q = db.quotations.find(x => x.id === id); if (!q || q.status === 'converted' || q.type === 'invoice') return; if (!(await confirmDlg(`Convert ${q.no} to a sale? Stock and payment will be handled in Point of Sale.`, 'Continue'))) return; if (cart.length) return toast('Finish or hold the current bill before loading a quotation', 'err'); const missing = q.items.filter(i => i.pid && !prod(i.pid)); if (missing.length) return toast('A quoted product is no longer in the product list', 'err'); for (const i of q.items) { if (!i.pid) return toast('Custom quotation items cannot be converted to a stock sale. Replace them with products first.', 'err'); const p = prod(i.pid); if (p.tracked || num(i.qty) > p.stock) return toast(`${p.name} is tracked by serial number or has insufficient stock`, 'err'); } cart = q.items.map(i => { const p = prod(i.pid), regular = num(p.price), quoted = num(i.price); return { pid:i.pid, name:p.name, qty:num(i.qty), price:regular, disc:r2(Math.max(regular - quoted, 0) * num(i.qty)), cost:p.cost || 0, dev:null, imei:'', warrantyM:p.warranty || 0 }; }); ps.cust = q.customerId || ''; ps.customerReady = !!cust(ps.cust); ps.customerPhone = cust(ps.cust)?.phone || ''; ps.dVal = 0; q.status = 'accepted'; q.acceptedAt = nowISO(); save(); nav('pos'); toast('Quote loaded into Point of Sale. Review tax and complete payment to create the sale.'); };
-/* ================= INVOICE: ONE BUSINESS INVOICE DESIGN =================
+/* ================= INVOICE: ONE BUSINESS INVOICE DESIGN + PRINTER & PAGE SETUP =================
    The "Business invoice" is the same A4 design that the Quotations section uses for its Invoice tab.
    It is edited on this page and saved once in settings.invoiceDesign (additive setting, read defensively).
    Every sale invoice, reprint and the Quotations → Invoice tab start from that one saved design.
    Older data: if settings.invoiceDesign does not exist yet, the template the shop had already selected
-   (settings.invoiceDocumentTemplates / invoiceDocumentTemplateId) is used, so nothing changes visually
-   for shops that already saved one. The older fields are left untouched. */
+   (settings.invoiceDocumentTemplates / invoiceDocumentTemplateId) is used. The older fields are left untouched.
+
+   Printing: the app uses the operating-system print dialog, so any installed printer works (with no printer a PDF is
+   saved). The page setup below (paper, margins, scale, offsets, feed, text size) is applied to BOTH invoice types:
+   - Business invoice (A4 design): scaled to fit the printable area of the chosen paper, or a manual scale.
+   - Thermal receipt: fluid "Auto" width for any roll, fixed 58/80 mm, custom width, or an A4/Letter sheet. */
 const IV_FIELDS = [...QE_COMPANY, 'dateLabel', 'm2Label', 'numLabel', 'terms', 'bankOn', 'accNo', 'accName', 'bank', 'branch'];
 const IV_IMAGES = ['docLogo', 'docBulb', 'docSign'];
-const IV_PRINT_CSS = '@page{size:A4;margin:0}.iv-wrap{max-width:100%;overflow:auto}@media print{html,body{height:1122px;overflow:hidden}.iv-wrap{overflow:visible}}';
+const IV_PAPERS = { A4: [210, 297], A5: [148, 210], Letter: [215.9, 279.4], Legal: [215.9, 355.6] };
+const IV_SHEET_CSS = '.iv-sheet{position:relative;overflow:hidden;background:#fff;box-sizing:border-box}.iv-fit{position:absolute;width:794px;height:1122px;transform-origin:0 0}';
+const ivClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, num(v)));
+const ivIsBiz = () => S().invoiceStyle !== 'receipt';
 let iv = null;                         // open design editor: { d: working copy, dirty }
-let ivMode = 'a4';
+let ivSig = '';                        // settings that change which fields the page shows
 
 function ivSource() {                  // saved design, or the template an older version had selected, or null
   const o = S();
@@ -767,14 +779,41 @@ function ivApply(d) {                  // lays the saved design over a blank inv
 }
 const invoiceDesign = () => qdBlank('invoice');
 
-/* The business invoice used by sales, reprints and the Sales window. It carries its own CSS because the print
-   job is rendered in a separate window that does not share the app's style sheets. */
-invoiceDocument = s => `<style>${qdFontCss()}${QD_CSS}${IV_PRINT_CSS}</style><div class="iv-wrap">${invoiceFromDocumentTemplate(s, invoiceDesign())}</div>`;
+/* Business invoice as shown on screen (sales window, reprint preview). It carries its own CSS. */
+function businessInvoiceHTML(s) {
+  return `<style>${qdFontCss()}${QD_CSS}.iv-wrap{max-width:100%;overflow:auto}</style><div class="iv-wrap">${invoiceFromDocumentTemplate(s, invoiceDesign())}</div>`;
+}
+
+/* ---- printer & page setup: business invoice ---- */
+function bizPrintCfg() {
+  const o = S(), std = IV_PAPERS[o.invoicePaper] || null;
+  const W = std ? std[0] : ivClamp(o.invoicePaperW || 210, 50, 1000), H = std ? std[1] : ivClamp(o.invoicePaperH || 297, 50, 1500);
+  const mt = ivClamp(o.invoiceMarginT, 0, 60), mr = ivClamp(o.invoiceMarginR, 0, 60), mb = ivClamp(o.invoiceMarginB, 0, 60), ml = ivClamp(o.invoiceMarginL, 0, 60);
+  const pw = Math.max(50, (W - ml - mr) * 96 / 25.4), ph = Math.max(50, (H - mt - mb) * 96 / 25.4);
+  let k = o.invoiceFit === 'manual' ? ivClamp(o.invoiceScale || 100, 20, 200) / 100 : Math.min(1.5, pw / 794, ph / 1122);
+  if (Math.abs(k - 1) < 0.005) k = 1;           // A4 on A4: exactly 100%, no rounding blur
+  return { W, H, mt, mr, mb, ml, pw, ph, k: +k.toFixed(4), ox: num(o.invoiceOffsetX), oy: num(o.invoiceOffsetY), std: std ? o.invoicePaper : '' };
+}
+function bizSheetHTML(inner, preview) {      // the A4 design placed on the chosen paper (same markup for preview and print)
+  const c = bizPrintCfg(), left = `calc(${(c.ml + c.ox).toFixed(2)}mm + ${((c.pw - 794 * c.k) / 2).toFixed(2)}px)`;
+  return `<div class="iv-sheet" style="width:${c.W}mm;height:${preview ? c.H : (c.H - 0.4).toFixed(1)}mm${preview ? ';box-shadow:0 6px 30px rgba(10,40,100,.25)' : ''}"><div class="iv-fit" style="left:${left};top:${(c.mt + c.oy).toFixed(2)}mm;transform:scale(${c.k})">${inner}</div></div>`;
+}
+function printBizDoc(inner, title) {
+  const c = bizPrintCfg();
+  printHTML(bizSheetHTML(inner, false), qdFontCss() + QD_CSS + IV_SHEET_CSS + `@page{size:${c.W}mm ${c.H}mm;margin:0}html,body{margin:0;padding:0;background:#fff;overflow:hidden}`, title || 'Invoice',
+    c.std ? { paperSize: c.std } : { pageSizeMm: { width: c.W, height: c.H } });
+}
+/* Sale invoice / receipt print. Used by Sales & Returns and the sale-complete window. */
+function printSaleDoc(s) {
+  if (ivIsBiz()) return printBizDoc(invoiceFromDocumentTemplate(s, invoiceDesign()), s.no);
+  const w = S().receiptSize;
+  printHTML(receipt(s), '', s.no, w === 'A4' || w === 'Letter' ? { paperSize: w } : {});   // roll widths follow the printer; sheets pass the paper size
+}
 
 const ivSample = () => ({
   no: 'INV-000123', at: nowISO(), day: ymd(), status: 'done', customerId: '', user: me?.name || 'Cashier',
   items: [{ name: 'Sample product A', qty: 2, price: 1250, disc: 0, imei: '' }, { name: 'Sample product B', qty: 1, price: 4500, disc: 250, imei: '' }],
-  itemsGross: 7000, lineDisc: 250, billDisc: 0, tax: 0, total: 6750, paid: 6750, pays: [{ method: 'Cash', amount: 6750 }], change: 0
+  itemsGross: 7000, lineDisc: 250, billDisc: 0, tax: 540, chargeLines: [{ name: 'VAT (8%)', amount: 540 }], total: 7290, paid: 5000, pays: [{ method: 'Cash', amount: 5000 }], change: 0
 });
 function ivStore(d) {                  // saves the working design as THE business invoice template
   const row = {}; IV_FIELDS.forEach(k => { row[k] = d[k]; });
@@ -784,21 +823,57 @@ function ivStore(d) {                  // saves the working design as THE busine
   log('invoice template', 'saved'); return flush();
 }
 
+/* ---- the page ---- */
+const ivSigNow = () => [S().invoiceStyle, S().invoicePaper, S().invoiceFit, S().receiptSize].join('|');
+const ivSet = (key, label, step = 'any') => `<label class="qe-l">${label}<input type="number" step="${step}" data-in="set" data-n="${key}" value="${esc(S()[key] ?? '')}"></label>`;
+const ivSel = (key, label, opts, cur) => `<label class="qe-l">${label}<select data-in="set" data-n="${key}">${opts.map(([v, t]) => `<option value="${v}" ${String(cur) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
+const ivTypeSel = () => ivSel('invoiceStyle', 'Invoice type', [['a4', 'Business invoice (A4)'], ['receipt', 'Compact thermal receipt']], ivIsBiz() ? 'a4' : 'receipt');
+
+function ivBizSetupHTML() {
+  const o = S(), cur = IV_PAPERS[o.invoicePaper] ? o.invoicePaper : (o.invoicePaper === 'custom' ? 'custom' : 'A4');
+  return `<fieldset class="qe-fs"><legend>Printer &amp; page setup</legend>
+  ${ivSel('invoicePaper', 'Paper size', [['A4', 'A4 (210 × 297 mm)'], ['A5', 'A5 (148 × 210 mm)'], ['Letter', 'Letter (8.5 × 11 in)'], ['Legal', 'Legal (8.5 × 14 in)'], ['custom', 'Custom size']], cur)}
+  ${cur === 'custom' ? `<div class="qe-row2">${ivSet('invoicePaperW', 'Paper width (mm)')}${ivSet('invoicePaperH', 'Paper height (mm)')}</div>` : ''}
+  <div class="qe-row2">${ivSet('invoiceMarginT', 'Margin top (mm)')}${ivSet('invoiceMarginB', 'Margin bottom (mm)')}</div>
+  <div class="qe-row2">${ivSet('invoiceMarginL', 'Margin left (mm)')}${ivSet('invoiceMarginR', 'Margin right (mm)')}</div>
+  ${ivSel('invoiceFit', 'Size on paper', [['auto', 'Auto-fit to the printable area (recommended)'], ['manual', 'Manual scale']], o.invoiceFit === 'manual' ? 'manual' : 'auto')}
+  ${o.invoiceFit === 'manual' ? ivSet('invoiceScale', 'Scale (%)') : ''}
+  <div class="qe-row2">${ivSet('invoiceOffsetX', 'Shift right (mm)')}${ivSet('invoiceOffsetY', 'Shift down (mm)')}</div>
+  <p class="qe-note">Choose the printer in the print dialog. Pick the paper size that is loaded in it; the invoice is scaled to fit. Use margins and shifts to correct printers that cut off or move the edges (negative shifts move left / up). Press Test print to check.</p>
+  <button type="button" class="btn" data-act="ivTestPrint" style="margin-top:8px">Test print</button></fieldset>`;
+}
+function ivReceiptSetupHTML() {
+  const o = S(), size = o.receiptSize || '80';
+  return `${ivSel('receiptSize', 'Paper / roll width', [['auto', 'Auto (fits any printer paper)'], ['80', '80 mm thermal'], ['58', '58 mm thermal'], ['custom', 'Custom roll width'], ['A4', 'A4 sheet'], ['Letter', 'Letter sheet']], size)}
+  ${size === 'custom' ? ivSet('receiptCustomW', 'Roll width (mm)') : ''}
+  <div class="qe-row2">${ivSet('receiptPadding', 'Padding / page margin (mm)')}${ivSet('receiptFontPct', 'Text size (%)')}</div>
+  <div class="qe-row2">${ivSet('receiptOffsetX', 'Shift right (mm)')}${ivSet('receiptOffsetY', 'Shift down (mm)')}</div>
+  <div class="qe-row2">${ivSet('receiptFeedTop', 'Extra space at top (mm)')}${ivSet('receiptFeedBottom', 'Extra space at bottom (mm)')}</div>
+  <label class="qe-l qe-ck" style="margin-top:8px"><input type="checkbox" data-in="set" data-n="receiptAutoAlign" ${o.receiptAutoAlign !== false ? 'checked' : ''}> Auto-center on the paper</label>
+  <p class="qe-note">“Auto” makes the receipt use the full width of whatever paper the selected printer has, so it works with 58 mm, 80 mm and other rolls. Choose the printer in the print dialog. Use the shifts to correct printers that cut off the edges, and extra space for tear-off room.</p>
+  <button type="button" class="btn" data-act="ivTestPrint" style="margin-top:8px">Test print</button>`;
+}
+
 P.invoice = () => {
   qdEnsureStyle();
   if (!iv || !iv.dirty) iv = { d: qdBlank('invoice'), dirty: false };      // an unsaved draft is kept until saved or reset
   ivMount();
 };
 function ivMount() {
-  const a4 = S().invoiceStyle !== 'receipt'; ivMode = a4 ? 'a4' : 'receipt';
-  const typeSel = `<label class="qe-l">Invoice type<select data-in="set" data-n="invoiceStyle"><option value="a4" ${a4 ? 'selected' : ''}>Business invoice (A4)</option><option value="receipt" ${a4 ? '' : 'selected'}>Compact thermal receipt</option></select></label>`;
-  if (!a4) {
-    view(`${hdr('Invoice template')}<div class="card" style="max-width:460px">${typeSel}<p class="qe-note">The thermal receipt is configured in Settings &amp; Backup → Business identity &amp; receipts. Switch to “Business invoice (A4)” to design the invoice used in Quotations.</p></div><div class="card" style="margin-top:14px"><h3>Receipt preview</h3><div style="max-width:340px;margin:8px auto;background:#fff;color:#000;padding:10px;border:1px solid var(--bd)">${receipt(ivSample())}</div></div>`);
-    return;
+  ivSig = ivSigNow();
+  if (!ivIsBiz()) {
+    view(`${hdr('Invoice template')}<div class="grid2"><div class="card"><h3>Invoice type</h3>${ivTypeSel()}<h3 style="margin-top:14px">Printer &amp; page setup</h3>${ivReceiptSetupHTML()}</div><div class="card"><h3>Receipt preview</h3><p class="mut sm">Sample sale. The preview follows the paper width and text size above.</p><div style="overflow:auto"><div id="rcPrev"></div></div></div></div>`);
+    return ivReceiptPreview();
   }
   view(`${hdr('Invoice template', '<button class="btn" data-act="ivDefault">Reset to default</button><button class="btn btn-p" data-act="ivSave">Save template</button>')}
 <div class="qe"><aside class="qe-panel" id="ivPanel"></aside><div class="qe-right"><div class="qe-warn" id="ivWarn" hidden>⚠ The content is longer than one A4 page. Shorten the terms or other text: anything below the page edge is cut off when printing.</div><main class="qe-stage" id="ivStage"><div class="qe-scaler" id="ivScaler"></div></main></div></div>`);
   ivForm(); ivRender();
+}
+function ivReceiptPreview() {
+  const el = $('#rcPrev'); if (!el) return;
+  const o = S(), size = o.receiptSize || '80', mm = size === 'auto' ? 80 : size === '58' ? 58 : size === '80' ? 80 : size === 'custom' ? ivClamp(o.receiptCustomW || 80, 30, 300) : size === 'A4' ? 210 : 215.9;
+  el.style.cssText = `width:${Math.round(mm * 3.78)}px;max-width:100%;margin:8px auto;background:#fff;color:#000;border:1px solid var(--bd);box-shadow:0 4px 18px rgba(0,0,0,.15);padding:0 ${Math.round(num(o.receiptPadding || 0) * 3.78)}px`;
+  el.innerHTML = receipt(ivSample());
 }
 const ivF = (label, key, o = {}) => {
   const v = iv.d[key] ?? '';
@@ -808,8 +883,8 @@ function ivForm() {
   const panel = $('#ivPanel'); if (!panel || !iv) return;
   const st = panel.scrollTop, d = iv.d, o = S();
   const imgBtn = (k, label) => o[k] ? `<button type="button" class="qe-x" data-act="ivImgClear" data-id="${k}">Remove ${label}</button>` : '';
-  panel.innerHTML = `<fieldset class="qe-fs"><legend>Invoice type</legend><label class="qe-l"><select data-in="set" data-n="invoiceStyle"><option value="a4" selected>Business invoice (A4)</option><option value="receipt">Compact thermal receipt</option></select></label>
-  <p class="qe-note">This is the same invoice design shown in Quotations → Invoice. Save it once and every new sale invoice and reprint uses it. The preview uses sample items.</p></fieldset>
+  panel.innerHTML = `<fieldset class="qe-fs"><legend>Invoice type</legend>${ivTypeSel()}
+  <p class="qe-note">The business invoice is the same design shown in Quotations → Invoice. Save it once and every new sale invoice and reprint uses it. The preview uses sample items.</p></fieldset>
 <fieldset class="qe-fs"><legend>Your company</legend>${ivF('Company name', 'companyName')}${ivF('Address', 'companyAddress', { area: 1 })}
   <div class="qe-row2">${ivF('Phone', 'companyPhone')}${ivF('Email', 'companyEmail')}</div>
   ${ivF('Header tagline', 'companyTagline', { area: 1 })}${ivF('Header subtitle', 'companySub')}${ivF('Footer text (right)', 'companyFootTag', { area: 1 })}${ivF('Signatory name', 'signName')}
@@ -817,18 +892,23 @@ function ivForm() {
   <div class="qe-imgs">${imgBtn('docLogo', 'logo')}${imgBtn('docBulb', 'header image')}${imgBtn('docSign', 'signature')}</div>
   <p class="qe-note">Images are saved once and reused on every document. With no logo chosen, the logo from Settings is used.</p></fieldset>
 <fieldset class="qe-fs"><legend>Field labels</legend><div class="qe-row3 eq">${ivF('Date', 'dateLabel')}${ivF('PO / reference', 'm2Label')}${ivF('Number', 'numLabel')}</div></fieldset>
-<fieldset class="qe-fs"><legend>Terms &amp; conditions (one per line)</legend>${ivF('', 'terms', { area: 1, rows: 5 })}<p class="qe-note">Sale invoices also list subtotal, charges, total, paid and balance under the terms.</p></fieldset>
+<fieldset class="qe-fs"><legend>Terms &amp; conditions (one per line)</legend>${ivF('', 'terms', { area: 1, rows: 5 })}<p class="qe-note">Subtotal, discount, tax, total, paid and balance are shown in the totals box on sale invoices.</p></fieldset>
 <fieldset class="qe-fs"><legend>Bank details</legend><label class="qe-l qe-ck"><input type="checkbox" data-in="iv" data-k="bankOn" ${d.bankOn ? 'checked' : ''}> Show bank details</label>${ivF('Account number', 'accNo')}${ivF('Account name', 'accName')}<div class="qe-row2">${ivF('Bank', 'bank')}${ivF('Branch', 'branch')}</div></fieldset>
+${ivBizSetupHTML()}
 <div class="qe-actions"><button type="button" class="btn btn-p" data-act="ivSave">Save template</button><button type="button" class="btn" data-act="ivReset">Discard changes</button></div>`;
   panel.scrollTop = st;
 }
 function ivRender() {
   const sc = $('#ivScaler'); if (!sc || !iv) return;
-  sc.innerHTML = invoiceFromDocumentTemplate(ivSample(), iv.d);
+  sc.innerHTML = bizSheetHTML(invoiceFromDocumentTemplate(ivSample(), iv.d), true);
   ivFit();
   const w = $('#ivWarn'); if (w) w.hidden = !qdOverflow(sc);
 }
-const ivFit = () => qdFit($('#ivStage'), $('#ivScaler'), 30);
+function ivFit() {                     // scales the paper preview down to the width available
+  const st = $('#ivStage'), sc = $('#ivScaler'); if (!st || !sc) return;
+  const c = bizPrintCfg(), pxW = c.W * 96 / 25.4, pxH = c.H * 96 / 25.4, k = Math.min(1, Math.max(0.2, (st.clientWidth - 54) / pxW));
+  sc.style.transform = `scale(${k})`; sc.style.width = Math.round(pxW) + 'px'; sc.style.height = Math.round(pxH * k) + 'px';
+}
 window.addEventListener('resize', ivFit);
 
 I.iv = (v, el) => { if (!iv) return; const k = el.dataset.k; if (!IV_FIELDS.includes(k)) return; iv.d[k] = k === 'bankOn' ? !!v : v; iv.dirty = true; ivRender(); };
@@ -859,9 +939,13 @@ A.ivDefault = async () => {
   o.invoiceDesign = keepDesign; o.invoiceDocumentTemplateId = keepId;
   iv = { d, dirty: true }; ivMount();
 };
+A.ivTestPrint = () => {                // prints the sample with the current page setup (business: the unsaved draft too)
+  if (ivIsBiz() && iv) return printBizDoc(invoiceFromDocumentTemplate(ivSample(), iv.d), 'Test invoice');
+  printSaleDoc(ivSample());
+};
 /* Called by the generic settings handler (I.set) while this page is open. */
 function refreshInvoicePreview() {
   if (current !== 'invoice') return;
-  const want = S().invoiceStyle === 'receipt' ? 'receipt' : 'a4';
-  if (want !== ivMode) P.invoice(); else if (iv) ivRender();
+  if (ivSigNow() !== ivSig) return P.invoice();      // type, paper or fit changed: show the matching fields
+  if (ivIsBiz()) { if (iv) ivRender(); } else ivReceiptPreview();
 }

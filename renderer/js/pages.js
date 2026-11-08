@@ -204,7 +204,7 @@ A.completeSale = () => {
   showReceipt(s); P.pos();
 };
 function showReceipt(s) { modal('Sale ' + s.no, receipt(s), `<button class="btn" data-act="closeModal">Close</button><button class="btn btn-p" data-act="printSale" data-id="${s.id}">🖨 Print receipt</button>`); }
-A.printSale = id => { const s = db.sales.find(x => x.id === id), size = ['A4', 'Letter'].includes(S().receiptSize) ? S().receiptSize : undefined; printHTML(receipt(s), '', s.no, size ? { paperSize: size } : {}); };
+A.printSale = id => { const s = db.sales.find(x => x.id === id); if (s) printSaleDoc(s); };      // page size, margins and scaling come from Invoice → Printer & page setup (pages2.js)
 
 /* ================= SALES & RETURNS ================= */
 let sf = { q: '', from: monthStart(), to: ymd() };
