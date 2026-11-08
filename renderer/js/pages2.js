@@ -340,7 +340,7 @@ P.invoice = () => {
   const s = S();
   const check = (key, label, value = true) => `<label class="f ck"><input type="checkbox" data-in="set" data-n="${key}" ${(s[key] ?? value) ? 'checked' : ''}> ${label}</label>`;
   const field = (key, label, type = 'text', value = '') => `<label class="f"><span>${label}</span><input type="${type}" data-in="set" data-n="${key}" value="${esc(s[key] ?? value)}"></label>`;
-  view(`${hdr('Invoice templates', '<button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button>')}<div class="card"><p class="mut">Customize the layout used for completed sales and reprints. Changes save automatically, and the preview updates as you edit.</p><h3>Page and style</h3><div class="fg"><label class="f"><span>Template</span><select data-in="set" data-n="invoiceStyle"><option value="a4" ${s.invoiceStyle === 'a4' ? 'selected' : ''}>Business invoice</option><option value="receipt" ${s.invoiceStyle === 'receipt' ? 'selected' : ''}>Compact thermal receipt</option></select></label><label class="f"><span>Paper size</span><select data-in="set" data-n="invoicePageSize"><option ${s.invoicePageSize !== 'Letter' ? 'selected' : ''}>A4</option><option ${s.invoicePageSize === 'Letter' ? 'selected' : ''}>Letter</option></select></label><label class="f"><span>Heading colour</span><input type="color" data-in="set" data-n="invoiceAccent" value="${esc(s.invoiceAccent || '#333333')}"></label><label class="f"><span>Font</span><select data-in="set" data-n="invoiceFont">${['Arial','Georgia','Times New Roman','Courier New','Verdana'].map(x => `<option ${s.invoiceFont === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>${field('invoiceFontSize','Font size (px)','number',14)}${field('invoicePageMargin','Page margin (mm)','number',14)}${field('invoiceLogoWidth','Logo width (px)','number',120)}${field('invoiceTitle','Invoice heading','text','INVOICE')}</div><h3>Show on invoice</h3><div class="fg">${check('invoiceShowLogo','Business logo')}${check('invoiceShowBusiness','Business name')}${check('invoiceShowAddress','Business address')}${check('invoiceShowPhone','Business phone')}${check('invoiceShowEmail','Business email')}${check('invoiceShowCustomer','Customer details')}${check('invoiceShowCashier','Cashier name',false)}${check('invoiceShowDueDate','Due date')}${check('invoiceShowItemCode','Item SKU / code',false)}${check('invoiceShowDiscount','Discount line')}${check('invoiceShowCharges','Tax and charge lines')}${check('invoiceShowPayment','Paid amount')}${check('invoiceShowBalance','Balance due')}${check('invoiceShowNotes','Notes')}${check('invoiceShowTerms','Terms and conditions')}${check('invoiceShowFooter','Footer')}</div><div class="fg" style="margin-top:12px"><label class="f full"><span>Notes</span><textarea data-in="set" data-n="invoiceNotes">${esc(s.invoiceNotes || '')}</textarea></label><label class="f full"><span>Terms &amp; conditions</span><textarea data-in="set" data-n="invoiceTerms">${esc(s.invoiceTerms || '')}</textarea></label><label class="f full"><span>Custom footer (blank uses receipt footer)</span><input data-in="set" data-n="invoiceFooter" value="${esc(s.invoiceFooter || '')}"></label></div><p class="mut sm">Business identity and logo are managed in Settings &amp; Backup → Business identity &amp; receipts. These options only affect the business invoice layout.</p><button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button></div><div class="card" style="margin-top:14px"><h3>Live preview</h3><p class="mut sm">Sample invoice preview. Your real sales data appears on printed and reprinted invoices.</p><iframe id="invoicePreview" title="Invoice template preview" style="width:100%;height:720px;border:1px solid var(--bd);border-radius:8px;background:#fff"></iframe></div>`);
+  view(`${hdr('Invoice templates', '<button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button>')}<div class="card"><p class="mut">Customize the layout used for completed sales and reprints. Changes save automatically, and the preview updates as you edit.</p><h3>Page and style</h3><div class="fg"><label class="f"><span>Template</span><select data-in="set" data-n="invoiceStyle"><option value="a4" ${s.invoiceStyle === 'a4' ? 'selected' : ''}>Business invoice</option><option value="receipt" ${s.invoiceStyle === 'receipt' ? 'selected' : ''}>Compact thermal receipt</option></select></label><label class="f"><span>Paper size</span><select data-in="set" data-n="invoicePageSize"><option ${s.invoicePageSize !== 'Letter' ? 'selected' : ''}>A4</option><option ${s.invoicePageSize === 'Letter' ? 'selected' : ''}>Letter</option></select></label><label class="f"><span>Font</span><select data-in="set" data-n="invoiceFont">${['Arial','Georgia','Times New Roman','Courier New','Verdana'].map(x => `<option ${s.invoiceFont === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label>${field('invoiceFontSize','Font size (px)','number',14)}${field('invoicePageMargin','Page margin (mm)','number',14)}${field('invoiceLogoWidth','Logo width (px)','number',120)}${field('invoiceTitle','Invoice heading','text','INVOICE')}</div><h3>Show on invoice</h3><div class="fg">${check('invoiceShowLogo','Business logo')}${check('invoiceShowBusiness','Business name')}${check('invoiceShowAddress','Business address')}${check('invoiceShowPhone','Business phone')}${check('invoiceShowEmail','Business email')}${check('invoiceShowCustomer','Customer details')}${check('invoiceShowCashier','Cashier name',false)}${check('invoiceShowDueDate','Due date')}${check('invoiceShowItemCode','Item SKU / code',false)}${check('invoiceShowDiscount','Discount line')}${check('invoiceShowCharges','Tax and charge lines')}${check('invoiceShowPayment','Paid amount')}${check('invoiceShowBalance','Balance due')}${check('invoiceShowNotes','Notes')}${check('invoiceShowTerms','Terms and conditions')}${check('invoiceShowFooter','Footer')}</div><div class="fg" style="margin-top:12px"><label class="f full"><span>Notes</span><textarea data-in="set" data-n="invoiceNotes">${esc(s.invoiceNotes || '')}</textarea></label><label class="f full"><span>Terms &amp; conditions</span><textarea data-in="set" data-n="invoiceTerms">${esc(s.invoiceTerms || '')}</textarea></label><label class="f full"><span>Custom footer (blank uses receipt footer)</span><input data-in="set" data-n="invoiceFooter" value="${esc(s.invoiceFooter || '')}"></label></div><p class="mut sm">Business identity and logo are managed in Settings &amp; Backup → Business identity &amp; receipts. These options only affect the business invoice layout.</p><button class="btn btn-p" data-act="saveInvoiceTemplate">Save template</button></div><div class="card" style="margin-top:14px"><h3>Live preview</h3><p class="mut sm">Sample invoice preview. Your real sales data appears on printed and reprinted invoices.</p><iframe id="invoicePreview" title="Invoice template preview" style="width:100%;height:720px;border:1px solid var(--bd);border-radius:8px;background:#fff"></iframe></div>`);
   refreshInvoicePreview();
 };
 
@@ -363,14 +363,14 @@ const QE_COMPANY = ['companyName', 'companyTagline', 'companyAddress', 'companyP
 
 /* ---- icons used inside the document ---- */
 const QD_SVG = {
-  pin: '<svg viewBox="0 0 26 26"><path fill="#0a4aa8" d="M13 1C8 1 4.5 4.700 4.500 9.500 4.500 15.500 13 25 13 25s8.500-9.500 8.500-15.500C21.500 4.700 18 1 13 1zm0 12a3.500 3.500 0 110-7 3.500 3.500 0 010 7z"/></svg>',
-  tel: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#0a4aa8"/><path fill="#fff" d="M8 6.500l2.500-.5 1.500 3.500-1.700 1.300a9 9 0 004.400 4.400l1.300-1.700 3.500 1.500-.5 2.500c-.2.800-.9 1.200-1.700 1.100C10.500 18 8 13.500 6.900 8.200 6.800 7.400 7.200 6.700 8 6.500z"/></svg>',
-  mail: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#0a4aa8"/><path fill="#fff" d="M6 8h14v10H6z"/><path fill="none" stroke="#0a4aa8" stroke-width="1.500" d="M6 8.500l7 5.500 7-5.500"/></svg>',
-  ftpin: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#2a78e4"/><path fill="#fff" d="M13 5.500c-3 0-5 2.100-5 5 0 3.700 5 9 5 9s5-5.300 5-9c0-2.900-2-5-5-5zm0 6.800a1.800 1.800 0 110-3.600 1.800 1.800 0 010 3.600z"/></svg>',
-  ftel: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#2a78e4"/><path fill="#fff" d="M8 6.500l2.500-.5 1.500 3.500-1.700 1.300a9 9 0 004.400 4.400l1.300-1.700 3.500 1.500-.5 2.500c-.2.800-.9 1.200-1.700 1.100C10.500 18 8 13.500 6.900 8.200 6.800 7.400 7.200 6.700 8 6.500z"/></svg>',
-  fmail: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="#2a78e4"/><path fill="#fff" d="M6 8h14v10H6z"/><path fill="none" stroke="#2a78e4" stroke-width="1.500" d="M6 8.500l7 5.500 7-5.500"/></svg>',
-  doc: '<svg width="26" height="26" viewBox="0 0 26 26"><rect x="4" y="1" width="18" height="24" rx="3" fill="#fff" stroke="#0a4aa8" stroke-width="2"/><path stroke="#0a4aa8" stroke-width="2" d="M8 9h10M8 14h10M8 19h7"/></svg>',
-  bank: '<svg width="26" height="26" viewBox="0 0 26 26"><path fill="#0a4aa8" d="M13 2l11 5v2H2V7zM4 11h3v9H4zm5 0h3v9H9zm5 0h3v9h-3zm5 0h3v9h-3zM2 21h22v3H2z"/></svg>'
+  pin: '<svg viewBox="0 0 26 26"><path fill="var(--qd-accent)" d="M13 1C8 1 4.5 4.700 4.500 9.500 4.500 15.500 13 25 13 25s8.500-9.500 8.500-15.500C21.500 4.700 18 1 13 1zm0 12a3.500 3.500 0 110-7 3.500 3.500 0 010 7z"/></svg>',
+  tel: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="var(--qd-accent)"/><path fill="#fff" d="M8 6.500l2.500-.5 1.500 3.500-1.700 1.300a9 9 0 004.400 4.400l1.300-1.700 3.500 1.500-.5 2.500c-.2.800-.9 1.200-1.700 1.100C10.500 18 8 13.500 6.900 8.200 6.800 7.400 7.200 6.700 8 6.500z"/></svg>',
+  mail: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="var(--qd-accent)"/><path fill="#fff" d="M6 8h14v10H6z"/><path fill="none" stroke="var(--qd-accent)" stroke-width="1.500" d="M6 8.500l7 5.500 7-5.500"/></svg>',
+  ftpin: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="var(--qd-accent)"/><path fill="#fff" d="M13 5.500c-3 0-5 2.100-5 5 0 3.700 5 9 5 9s5-5.300 5-9c0-2.900-2-5-5-5zm0 6.800a1.800 1.800 0 110-3.600 1.800 1.800 0 010 3.600z"/></svg>',
+  ftel: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="var(--qd-accent)"/><path fill="#fff" d="M8 6.500l2.500-.5 1.500 3.500-1.700 1.300a9 9 0 004.400 4.400l1.300-1.700 3.500 1.500-.5 2.500c-.2.800-.9 1.200-1.700 1.100C10.500 18 8 13.500 6.900 8.200 6.800 7.400 7.200 6.700 8 6.500z"/></svg>',
+  fmail: '<svg viewBox="0 0 26 26"><circle cx="13" cy="13" r="13" fill="var(--qd-accent)"/><path fill="#fff" d="M6 8h14v10H6z"/><path fill="none" stroke="var(--qd-accent)" stroke-width="1.500" d="M6 8.500l7 5.500 7-5.500"/></svg>',
+  doc: '<svg width="26" height="26" viewBox="0 0 26 26"><rect x="4" y="1" width="18" height="24" rx="3" fill="#fff" stroke="var(--qd-accent)" stroke-width="2"/><path stroke="var(--qd-accent)" stroke-width="2" d="M8 9h10M8 14h10M8 19h7"/></svg>',
+  bank: '<svg width="26" height="26" viewBox="0 0 26 26"><path fill="var(--qd-accent)" d="M13 2l11 5v2H2V7zM4 11h3v9H4zm5 0h3v9H9zm5 0h3v9h-3zm5 0h3v9h-3zM2 21h22v3H2z"/></svg>'
 };
 
 /* ---- document design: A4 at 96 dpi = 794 x 1122 px. The same CSS is used by the preview, Print and PDF. ---- */
@@ -381,30 +381,31 @@ const QD_CSS = `
 .qd th,.qd td{letter-spacing:normal;text-transform:none;position:static}
 .qd .qd-hd{position:relative;height:173px;background:#fff;overflow:hidden}
 .qd .qd-logo{position:absolute;left:22px;top:14px;width:246px;height:123px;object-fit:contain}
-.qd .qd-logot{display:flex;align-items:center;font-size:30px;line-height:1.1;font-weight:700;color:#0a2d6b;overflow:hidden;word-break:break-word}
+.qd .qd-logot{color:var(--qd-accent-dark)}
+.qd .qd-logot{display:flex;align-items:center;font-size:30px;line-height:1.1;font-weight:700;color:var(--qd-accent-dark);overflow:hidden;word-break:break-word}
 .qd .qd-bulb{position:absolute;right:0;top:0;height:141px}
-.qd .qd-bf{position:absolute;right:0;top:0;width:124px;height:141px;background:linear-gradient(90deg,#082d75 0,rgba(8,45,117,0) 35%),linear-gradient(0deg,#0a3585 0,rgba(10,53,133,0) 30%)}
-.qd .qd-tag{position:absolute;left:434px;top:18px;font-family:QDScript,"Segoe Script","Brush Script MT",cursive;font-size:29px;line-height:24px;color:#dbe8ff;transform:rotate(-3deg)}
+.qd .qd-bf{position:absolute;right:0;top:0;width:124px;height:141px;background:linear-gradient(90deg,var(--qd-accent-dark) 0,transparent 75%),linear-gradient(0deg,var(--qd-accent-dark) 0,transparent 70%)}
+.qd .qd-tag{position:absolute;left:434px;top:18px;font-family:QDScript,"Segoe Script","Brush Script MT",cursive;font-size:29px;line-height:24px;color:var(--qd-accent-light);transform:rotate(-3deg)}
 .qd .qd-ttl{position:absolute;left:434px;top:84px;font-size:47px;font-weight:700;color:#fff;letter-spacing:1px;line-height:1}
-.qd .qd-ttl:after{content:"";display:block;margin-top:14px;height:2px;width:336px;background:linear-gradient(90deg,#5aa2ff,transparent)}
+.qd .qd-ttl:after{content:"";display:block;margin-top:14px;height:2px;width:336px;background:linear-gradient(90deg,var(--qd-accent-light),transparent)}
 .qd .qd-sub{position:absolute;left:434px;top:149px;font-size:10.6px;color:#fff;letter-spacing:.2px;font-weight:500;white-space:nowrap}
 .qd .qd-info{display:grid;grid-template-columns:262px 1fr 232px;padding:10px 26px 0 28px;height:146px}
 .qd .qd-co{border-right:2px solid #c9d8ee;padding-right:8px;min-width:0}
-.qd .qd-co h2{font-size:22px;color:#0a2d6b;margin-bottom:0;word-break:break-word}
+.qd .qd-co h2{font-size:22px;color:var(--qd-accent-dark);margin-bottom:0;word-break:break-word}
 .qd .qd-ln{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:18px;margin-top:4px}
 .qd .qd-ln svg{flex:0 0 26px;width:26px;height:26px}
 .qd .qd-ln span{padding-top:3px;word-break:break-word}
 .qd .qd-bt{padding-left:14px;min-width:0}
-.qd .qd-bt h3{font-size:18px;color:#0f5ad0;line-height:1}
-.qd .qd-bt h4{font-size:21px;color:#0a2d6b;margin:4px 0 2px;word-break:break-word}
+.qd .qd-bt h3{font-size:18px;color:var(--qd-accent);line-height:1}
+.qd .qd-bt h4{font-size:21px;color:var(--qd-accent-dark);margin:4px 0 2px;word-break:break-word}
 .qd .qd-bt .qd-ln{font-size:12.6px}
 .qd .qd-meta{align-self:start;margin-top:0;border:1px solid #bcd3f2;width:232px}
 .qd .qd-meta div{display:grid;grid-template-columns:80px 1fr;height:35px;border-bottom:2px solid #bcd3f2;background:#eef5fd;font-size:14.5px}
 .qd .qd-meta div:last-child{border-bottom:0}
-.qd .qd-meta b{background:#0b4a9e;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13.5px;letter-spacing:.3px;font-weight:700}
+.qd .qd-meta b{background:var(--qd-accent);color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:13.5px;letter-spacing:.3px;font-weight:700}
 .qd .qd-meta span{display:flex;align-items:center;padding-left:14px;font-weight:500;min-width:0;overflow:hidden;white-space:nowrap}
 .qd table.qd-it{width:calc(100% - 52px);margin:0 26px;border-collapse:collapse;table-layout:fixed;font-size:12.6px}
-.qd .qd-it th{background:#0b4a9e;color:#fff;height:40px;font-size:12px;line-height:1.25;border:0;border-right:1px solid #2f66b5;font-weight:700;text-align:center;vertical-align:middle}
+.qd .qd-it th{background:var(--qd-accent);color:#fff;height:40px;font-size:12px;line-height:1.25;border:0;border-right:1px solid var(--qd-accent-dark);font-weight:700;text-align:center;vertical-align:middle}
 .qd .qd-it th:first-child{width:6.6%}
 .qd .qd-it th.qd-d{text-align:left;padding-left:14px}
 .qd .qd-it td{background:#f5f9fe;border:1px solid #cddff5;text-align:center;height:54px;font-weight:400;padding:2px 6px;vertical-align:middle;color:#12233f}
@@ -412,32 +413,32 @@ const QD_CSS = `
 .qd .qd-it td.qd-d b{font-weight:700}
 .qd .qd-it td.qd-n{text-align:right;padding-right:14px;font-weight:500}
 .qd .qd-bottom{display:grid;gap:9px;padding:12px 26px 0;align-items:start}
-.qd .qd-tc,.qd .qd-bk{background:#e6f0fc;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.4;min-width:0}
-.qd .qd-bk{border:1px solid #bcd3f2;background:#eef5fd}
-.qd .qd-tc h5,.qd .qd-bk h5{font-size:16px;color:#0a4aa8;margin-bottom:6px;display:flex;align-items:center;gap:6px;font-weight:700}
+.qd .qd-tc,.qd .qd-bk{background:var(--qd-accent-light);border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.4;min-width:0}
+.qd .qd-bk{border:1px solid var(--qd-accent-light);background:var(--qd-accent-light)}
+.qd .qd-tc h5,.qd .qd-bk h5{font-size:16px;color:var(--qd-accent-dark);margin-bottom:6px;display:flex;align-items:center;gap:6px;font-weight:700}
 .qd .qd-tc ul{padding-left:16px}
 .qd .qd-tc li{margin-bottom:5px;color:#1e3a66}
-.qd .qd-bk b{display:block;color:#0a4aa8;font-size:12.2px;line-height:1.35;font-weight:700}
+.qd .qd-bk b{display:block;color:var(--qd-accent-dark);font-size:12.2px;line-height:1.35;font-weight:700}
 .qd .qd-tot{border:1px solid #cddff5;background:#f2f7fe;font-size:12.5px}
 .qd .qd-tot .qd-r{display:flex;justify-content:space-between;align-items:center;height:43px;padding:0 12px;font-weight:700;border-bottom:1px solid #cddff5}
-.qd .qd-tot .qd-g{background:#0b3d91;color:#fff;height:52px;border:0}
+.qd .qd-tot .qd-g{background:var(--qd-accent-dark);color:#fff;height:52px;border:0}
 .qd .qd-tot .qd-g em{font-style:normal;font-size:19px}
 .qd .qd-sig{position:absolute;left:36px;bottom:76px;width:190px;font-size:14px;line-height:1.25}
 .qd .qd-sig img{display:block;height:58px;margin-left:8px;object-fit:contain}
-.qd .qd-sig hr{border:0;border-top:1.5px solid #0a4aa8;margin:2px 0 4px}
+.qd .qd-sig hr{border:0;border-top:1.5px solid var(--qd-accent);margin:2px 0 4px}
 .qd .qd-sig b{font-size:16px;display:block;font-weight:700}
 .qd .qd-csig{position:absolute;left:265px;bottom:76px;width:190px;font-size:14px;line-height:1.25}
 .qd .qd-cspace{height:58px}
 .qd .qd-cname{height:20px}
-.qd .qd-csig hr{border:0;border-top:1.5px solid #0a4aa8;margin:2px 0 4px}
+.qd .qd-csig hr{border:0;border-top:1.5px solid var(--qd-accent);margin:2px 0 4px}
 .qd .qd-ty{position:absolute;right:30px;bottom:74px;text-align:center;width:250px}
-.qd .qd-ty i{display:block;font-family:QDScript,"Segoe Script","Brush Script MT",cursive;font-style:normal;font-size:52px;color:#0b3d91;line-height:1;transform:rotate(-4deg)}
-.qd .qd-ty span{display:block;font-size:12.5px;letter-spacing:4px;color:#0a4aa8;font-weight:500;margin-top:6px}
-.qd .qd-ty:after{content:"";display:block;width:64px;height:2px;background:#0a4aa8;margin:8px auto 0}
-.qd .qd-ft{position:absolute;left:0;right:0;bottom:0;height:66px;background:linear-gradient(90deg,#0a4aa8 0,#0b3d91 12%,#082d75);display:flex;align-items:center;gap:22px;padding:0 26px 0 56px;color:#fff;font-size:11.3px}
+.qd .qd-ty i{display:block;font-family:QDScript,"Segoe Script","Brush Script MT",cursive;font-style:normal;font-size:52px;color:var(--qd-accent-dark);line-height:1;transform:rotate(-4deg)}
+.qd .qd-ty span{display:block;font-size:12.5px;letter-spacing:4px;color:var(--qd-accent-dark);font-weight:500;margin-top:6px}
+.qd .qd-ty:after{content:"";display:block;width:64px;height:2px;background:var(--qd-accent);margin:8px auto 0}
+.qd .qd-ft{position:absolute;left:0;right:0;bottom:0;height:66px;background:linear-gradient(90deg,var(--qd-accent) 0,var(--qd-accent-dark) 12%,var(--qd-accent-dark));display:flex;align-items:center;gap:22px;padding:0 26px 0 56px;color:#fff;font-size:11.3px}
 .qd .qd-ft .qd-i{display:flex;align-items:center;gap:8px;min-width:0}
 .qd .qd-ft .qd-i svg{width:28px;height:28px;flex:0 0 28px}
-.qd .qd-ft .qd-q{margin-left:auto;border-left:1px solid #5b86c9;padding-left:14px;font-size:9.5px;line-height:1.5;letter-spacing:.2px}
+.qd .qd-ft .qd-q{margin-left:auto;border-left:1px solid var(--qd-accent-light);padding-left:14px;font-size:9.5px;line-height:1.5;letter-spacing:.2px}
 `;
 const qdFontCss = () => {
   const f = window.QFONTS; if (!f) return '';
@@ -483,6 +484,9 @@ function qdFromRecord(rec) {
 /* ---- the A4 document (returns HTML; used by preview, print and PDF) ---- */
 function qdHTML(d) {
   const q = d.type !== 'invoice', o = S();
+  const accent = /^#[0-9a-f]{6}$/i.test(o.accent || '') ? o.accent : '#f97316';
+  const accentDark = `color-mix(in srgb, ${accent} 68%, #000)`;
+  const accentLight = `color-mix(in srgb, ${accent} 18%, #fff)`;
   const logo = o.docLogo || o.logoData || '', bulb = o.docBulb || '', sign = o.docSign || o.documentSignatureData || '';
   let orig = 0, tot = 0;
   const items = d.items || [];
@@ -499,8 +503,8 @@ function qdHTML(d) {
   const line = (icon, html) => html ? `<div class="qd-ln">${icon}<span>${html}</span></div>` : '';
   const fline = (icon, html) => html ? `<div class="qd-i">${icon}<span>${html}</span></div>` : '';
   const m2 = q ? qdDate(d.validUntil) : d.poNumber;
-  return `<div class="qd">
-  <div class="qd-hd"><svg style="position:absolute;left:0;top:0" width="794" height="173" viewBox="0 0 794 173"><defs><linearGradient id="qdhg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="#0c3f96"/><stop offset="1" stop-color="#052362"/></linearGradient></defs><polygon points="275,0 794,0 794,173 376,173" fill="#2a78e4"/><polygon points="291,0 794,0 794,173 399,173" fill="url(#qdhg)"/></svg>
+  return `<div class="qd" style="--qd-accent:${accent};--qd-accent-dark:${accentDark};--qd-accent-light:${accentLight}">
+  <div class="qd-hd"><svg style="position:absolute;left:0;top:0" width="794" height="173" viewBox="0 0 794 173"><defs><linearGradient id="qdhg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="${accent}"/><stop offset="1" stop-color="${accentDark}"/></linearGradient></defs><polygon points="275,0 794,0 794,173 376,173" fill="${accent}"/><polygon points="291,0 794,0 794,173 399,173" fill="url(#qdhg)"/></svg>
     ${logo ? `<img class="qd-logo" src="${esc(logo)}" alt="">` : `<div class="qd-logo qd-logot">${esc(d.companyName)}</div>`}${bulb ? `<img class="qd-bulb" src="${esc(bulb)}" alt=""><div class="qd-bf"></div>` : ''}
     ${d.companyTagline ? `<div class="qd-tag">${qdNl(d.companyTagline)}</div>` : ''}<div class="qd-ttl" style="font-size:${q ? 39 : 47}px">${q ? 'QUOTATION' : 'INVOICE'}</div>${d.companySub ? `<div class="qd-sub">${esc(d.companySub).replace(/ {2}/g, ' &nbsp;')}</div>` : ''}</div>
   <div class="qd-info">
@@ -517,7 +521,7 @@ function qdHTML(d) {
   <div class="qd-sig">${sign ? `<img src="${esc(sign)}" alt="">` : '<div style="height:58px"></div>'}<hr>Authorized Signatory<b>${esc(d.signName || d.companyName)}</b></div>
   ${q ? '' : '<div class="qd-csig"><div class="qd-cspace"></div><hr>Customer Signature<div class="qd-cname"></div></div>'}
   <div class="qd-ty"><i>Thank You!</i><span>FOR YOUR BUSINESS!</span></div>
-  <div class="qd-ft"><svg style="position:absolute;left:0;top:0" width="38" height="66" viewBox="0 0 38 66"><polygon points="0,0 23,0 0,66" fill="#1f7be6"/></svg>${fline(QD_SVG.ftpin, esc(String(d.companyAddress || '').replace(/\n/g, ' ')))}${fline(QD_SVG.ftel, esc(d.companyPhone))}${fline(QD_SVG.fmail, esc(d.companyEmail))}${d.companyFootTag ? `<div class="qd-q">${qdNl(d.companyFootTag)}</div>` : ''}</div></div>`;
+  <div class="qd-ft"><svg style="position:absolute;left:0;top:0" width="38" height="66" viewBox="0 0 38 66"><polygon points="0,0 23,0 0,66" fill="${accent}"/></svg>${fline(QD_SVG.ftpin, esc(String(d.companyAddress || '').replace(/\n/g, ' ')))}${fline(QD_SVG.ftel, esc(d.companyPhone))}${fline(QD_SVG.fmail, esc(d.companyEmail))}${d.companyFootTag ? `<div class="qd-q">${qdNl(d.companyFootTag)}</div>` : ''}</div></div>`;
 }
 
 /* ---- print and PDF ---- */
