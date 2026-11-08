@@ -8,7 +8,7 @@ There are **two update channels**. Both read the same file: `https://pos360live.
 | Download size | A few KB to a few hundred KB (only changed files) | About 80–120 MB |
 | Needs installer / admin / SmartScreen? | No | Yes (silent, automatic) |
 | How you publish | `git push` (Vercel deploys) | Build installers, upload, `npm run release:stage`, `git push` |
-| How the client gets it | Automatic check on start + every 3 h. Applied automatically at the login screen, or owner/manager clicks **Restart now** | **Settings → System update → Check for updates → Install and restart** |
+| How the client gets it | User clicks **Check for updates**, then explicitly chooses **Restart to apply update** or **Install and restart** | **Settings → System update → Check for updates → Install and restart** |
 
 Shop data is never touched by either channel.
 
@@ -19,7 +19,7 @@ Shop data is never touched by either channel.
 1. Edit files in `renderer/` (or any screen code).
 2. `git add . && git commit -m "Fix VAT rounding" && git push`
 3. Vercel builds. `scripts/build-ui-manifest.js` runs automatically, fingerprints every file in `renderer/`, and adds a `ui` section to `latest.json`. The commit message becomes the update note.
-4. Client PCs that are online pick it up automatically.
+4. Clients receive the release only after someone on that PC clicks **Check for updates**; screen bundles download then and wait for an explicit restart.
 
 You do **not** edit `latest.json` for daily updates.
 

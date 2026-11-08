@@ -2,16 +2,15 @@
 /*
  * UPDATE UI (desktop app only; does nothing in the browser version)
  *
- *  - Checks the live server on start-up, every 3 hours, and whenever the internet comes back.
- *  - LIVE UI UPDATE: small verified download of the changed screens. Applied automatically while
- *    nobody is signed in (login screen), otherwise the owner/manager clicks "Restart now".
+ *  - Contacts the update server only after a user clicks "Check for updates".
+ *  - LIVE UI UPDATE: small verified download of changed screens, then explicitly applied by a
+ *    user choosing "Restart to apply update".
  *  - INSTALLER UPDATE: only when a new desktop app version is published. The owner clicks
  *    "Install and restart" in Settings > System update.
  */
 (function () {
   const api = window.posApi;
   const DEFAULT_URL = 'https://pos360live.vercel.app/updates/latest.json';
-  const CHECK_EVERY_MS = 3 * 60 * 60 * 1000;
   const state = { running: false, ui: null, installer: null, installerError: '', uiReady: false, uiError: '', notes: '', dismissed: false, lastResult: null };
 
   const manifestUrl = () => { try { return (S().updateManifestUrl || '').trim() || DEFAULT_URL; } catch { return DEFAULT_URL; } };
@@ -61,10 +60,10 @@
       document.body.appendChild(el);
     }
     const message = state.uiReady
-      ? `<b>An update is ready.</b><br><span style="opacity:.8">${canManage() ? 'Restart the screens now, or it installs automatically next time the POS opens.' : 'It installs automatically the next time the POS opens.'}</span>`
+      ? `<b>An update is ready.</b><br><span style="opacity:.8">Open Settings → System update and choose Restart to apply update.</span>`
       : `<b>New POS version ${esc(state.installer.version)} is available.</b><br><span style="opacity:.8">Open Settings → System update to install it.</span>`;
     const action = state.uiReady
-      ? (canManage() ? '<button class="btn btn-p" data-act="applyUiUpdate">Restart now</button>' : '')
+      ? (canManage() ? '<button class="btn btn-p" data-act="openUpdateSettings">Open</button>' : '')
       : '<button class="btn btn-p" data-act="openUpdateSettings">Open</button>';
     el.innerHTML = `<div style="flex:1">${message}</div>${action}<a data-act="dismissUpdateBanner" style="cursor:pointer;opacity:.6;font-size:18px;line-height:1" title="Hide">×</a>`;
   }
@@ -133,20 +132,11 @@
     toast('Update downloaded and verified. The POS is now installing and will restart automatically.');
   };
 
-  // ---- schedule -------------------------------------------------------------------------
-  async function autoCheck() {
-    if (navigator.onLine === false) return;
-    await check();
-    if (state.uiReady && !signedIn()) return applyNow(); // nobody is mid-sale on the login screen
-    renderBanner(); refreshStatus();
-  }
+  // ---- initialization -------------------------------------------------------------------
   function start() {
     if (!api || !api.checkUpdate) return;
-    // app.js calls this only after database, license and initial screen boot all succeed.
-    setTimeout(autoCheck, 8000);
-    setInterval(autoCheck, CHECK_EVERY_MS);
-    window.addEventListener('online', () => setTimeout(autoCheck, 3000));
-    setInterval(() => { if (state.uiReady && !signedIn()) applyNow(); else renderBanner(); }, 15000);
+    // No background checks, downloads, or application. The Settings button is the sole trigger.
+    renderBanner();
   }
 
   window.updateUi = { start, check, refreshStatus };

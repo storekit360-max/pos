@@ -41,8 +41,8 @@ Installed app (Windows/Mac)
 |---|---|---|
 | Triggered by | Any change in `renderer/` + `git push` | New `version` + installers + `release:stage` + `git push` |
 | Size | KB | ~80–120 MB |
-| Client action | None at login screen; **Restart now** if signed in | **Settings → System update → Install and restart** |
-| Check timing | App start (+8 s), every 3 h, when internet returns, or manual button | same |
+| Client action | **Settings → System update → Check for updates → Restart to apply update** | **Settings → System update → Check for updates → Install and restart** |
+| Check timing | Manual button only | Manual button only |
 | Safety | SHA-256 per file, fallback to bundled screens, 3-boot crash guard | SHA-256 of installer, script always reopens POS |
 
 Important behaviours to remember:
@@ -110,7 +110,7 @@ Current policy: `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src '
 - `fetch()` to another website is blocked. If a feature really needs an online API (SMS, cloud sync, payment), either call it from the main process (shell change) or add the specific host to `connect-src` in `index.html` (a screens change) — and handle failure when offline.
 
 ### 3.5 Don't lose a cashier's work
-- Applying a screen update restarts the app so the verified bundle is promoted on startup. An unsaved cart in memory is lost. That is why the update applies automatically **only at the login screen**, and signed-in users see a banner. Applied update history is recorded after the new screens successfully boot.
+- Applying a screen update restarts the app so the verified bundle is promoted on startup. An unsaved cart in memory is lost, so screen updates are downloaded only after a manual check and require an explicit restart action. Applied update history is recorded after the new screens successfully boot.
 - Never add `location.reload()` loops in boot code. The updater already has a per-session guard against apply loops.
 
 ### 3.6 Boot must never throw
@@ -194,7 +194,7 @@ if (d) {
   - ✅ `Add warranty days to products`
   - ❌ `wip`, `fix`, `asdf`, `merge branch main`
 - One feature or fix per merge. Small, frequent releases are easier to test and to roll back.
-- Don't release at peak shop hours if you can avoid it. The update applies only when a user clicks Restart (or at login), but a bad release hurts most at busy times.
+- Don't release at peak shop hours if you can avoid it. The update applies only when a user clicks Restart, but a bad release hurts most at busy times.
 - Don't commit generated files: `dist/`, `client-ready/`, `node_modules/`, and **never commit the copy of `renderer/` inside `public/`** or a locally generated `public/updates/latest.json` containing a `ui` section. If you ran the build command locally: `git checkout public/updates/latest.json` and delete the copied files in `public/`. (Optional: add `/public/*` and `!/public/updates/` to `.gitignore`.)
 
 ---
