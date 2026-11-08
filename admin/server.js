@@ -74,6 +74,10 @@ async function handler(req, res) {
     const table = url.pathname.split('/')[2], sql = { customers:'SELECT * FROM customers ORDER BY created_at DESC LIMIT 500', plans:'SELECT * FROM plans ORDER BY name', subscriptions:'SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 500', licenses:'SELECT id,customer_id,subscription_id,key_hint,status,device_limit,expires_at,created_at FROM licenses ORDER BY created_at DESC LIMIT 500', activations:'SELECT * FROM activations ORDER BY last_seen DESC LIMIT 500', payments:'SELECT * FROM payments ORDER BY created_at DESC LIMIT 500', audit:'SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500' }[table];
     return json(res, 200, (await pool.query(sql)).rows);
   }
+  if (req.method === 'GET' && url.pathname === '/api/options') {
+    const [customers, plans] = await Promise.all([pool.query('SELECT id,business_name,full_name FROM customers WHERE status=\'active\' ORDER BY business_name'),pool.query('SELECT id,name,duration_days,price,currency,device_limit FROM plans WHERE active ORDER BY name')]);
+    return json(res, 200, {customers:customers.rows,plans:plans.rows});
+  }
   if (req.method === 'POST' && url.pathname === '/api/licenses/generate') {
     const b = await body(req), count = Number(b.count || 1), limit = Number(b.device_limit || 1);
     if (!Number.isInteger(count) || count < 1 || count > 100 || !Number.isInteger(limit) || limit < 1 || limit > 100) return json(res, 400, { error: 'Count must be 1–100 and device limit 1–100' });
@@ -91,6 +95,28 @@ async function handler(req, res) {
       return json(res,201,{licenses:issued});
     } catch(e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
   }
+  if (req.method === 'POST' && url.pathname === '/api/subscriptions') {
+    const b=await body(req); if(!b.customer_id||!b.plan_id)return json(res,400,{error:'Choose a customer and plan'});
+    const p=await pool.query('SELECT duration_days,device_limit FROM plans WHERE id=$1 AND active',[b.plan_id]); if(!p.rowCount)return json(res,400,{error:'Plan is unavailable'});
+    const duration=Number(p.rows[0].duration_days||365), days=Number.isInteger(duration)&&duration>0?duration:365;
+    const out=await pool.query("INSERT INTO subscriptions(customer_id,plan_id,status,starts_at,expires_at) VALUES($1,$2,'active',now(),now()+($3||' days')::interval) RETURNING *",[b.customer_id,b.plan_id,days]);
+    await audit(s.admin_id,'subscription_created','subscriptions',out.rows[0].id,req); return json(res,201,out.rows[0]);
+  }
+  if (req.method === 'POST' && url.pathname === '/api/payments') {
+    const b=await body(req); if(!b.customer_id||!b.amount||!b.method)return json(res,400,{error:'Customer, amount and method are required'});
+    const amount=Number(b.amount); if(!Number.isFinite(amount)||amount<0)return json(res,400,{error:'Invalid amount'});
+    const invoice=`SP-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const out=await pool.query("INSERT INTO payments(customer_id,subscription_id,invoice_number,amount,currency,method,reference,status,paid_at,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $8='completed' THEN now() ELSE NULL END,$9) RETURNING *",[b.customer_id,b.subscription_id||null,invoice,amount,String(b.currency||'USD').toUpperCase().slice(0,3),String(b.method).slice(0,80),b.reference||null,b.status==='completed'?'completed':'pending',String(b.notes||'').slice(0,1000)]);
+    await audit(s.admin_id,'payment_recorded','payments',out.rows[0].id,req,{status:out.rows[0].status}); return json(res,201,out.rows[0]);
+  }
+  const action=url.pathname.match(/^\/api\/(licenses|activations|subscriptions|payments)\/([0-9a-f-]{36})\/(revoke|restore|deactivate|activate|cancel|expire|complete|void)$/i);
+  if(req.method==='POST'&&action){const [,entity,id,op]=action;let sql;
+    if(entity==='licenses'&&['revoke','restore'].includes(op))sql=pool.query('UPDATE licenses SET status=$1 WHERE id=$2 RETURNING id,status',[op==='revoke'?'revoked':'available',id]);
+    else if(entity==='activations'&&['deactivate','activate'].includes(op))sql=pool.query('UPDATE activations SET status=$1 WHERE id=$2 RETURNING id,status',[op==='deactivate'?'revoked':'active',id]);
+    else if(entity==='subscriptions'&&['cancel','expire','activate'].includes(op))sql=pool.query("UPDATE subscriptions SET status=$1,expires_at=CASE WHEN $1='expired' THEN now() ELSE expires_at END WHERE id=$2 RETURNING id,status,expires_at",[({cancel:'cancelled',expire:'expired',activate:'active'})[op],id]);
+    else if(entity==='payments'&&['complete','void'].includes(op))sql=pool.query("UPDATE payments SET status=$1,paid_at=CASE WHEN $1='completed' THEN now() ELSE paid_at END WHERE id=$2 RETURNING id,status",[op==='complete'?'completed':'void',id]);
+    else return json(res,400,{error:'Unsupported action'});
+    const out=await sql;if(!out.rowCount)return json(res,404,{error:'Record not found'});await audit(s.admin_id,`${entity}_${op}`,entity,id,req);return json(res,200,out.rows[0]);}
   const collection = url.pathname.match(/^\/api\/(customers|plans)$/);
   if (req.method === 'POST' && collection) {
     const table = collection[1], b = await body(req), cols = allowedTables[table], keys = Object.keys(b).filter(k => cols.includes(k));
