@@ -125,6 +125,10 @@ async function liveSignIn(username, password) {
   me = result.user; licenseInfo=result.license||null; log('login', me.username); await flush(); shell();
 }
 
+function startupScreen() {
+  $('#app').innerHTML = `<div class="login" role="status" aria-live="polite"><div class="card"><h2 style="margin:4px 0">Loading POS…</h2><p class="mut">Checking this shop and restoring your session.</p></div></div>`;
+}
+
 function liveAuthScreen(view, opts = {}) {
   const s = S(), isSetup = view === 'setup', isRegister = view === 'register';
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
@@ -211,9 +215,10 @@ document.addEventListener('keydown', e => {
 
 (async function boot() {
   if (LIVE_WEB) {
-    // Paint the sign-in form before waiting on local storage or the live service.
+    // Do not show a sign-in form until this host and any saved session have
+    // been checked. In particular, an unknown tenant host must not look valid.
     db = defaults();
-    loginScreen();
+    startupScreen();
     await loadDB();
     let status, setup, signed;
     try {
@@ -228,6 +233,10 @@ document.addEventListener('keydown', e => {
       setup = responses[0]; signed = responses[1];
     } catch (err) {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
+      db = defaults(); loginScreen(); window.updateUi?.start(); return;
+    }
+    if (!setup.setupRequired && !setup.tenant && location.hostname.split('.').length > 2) {
+      cloudLastError = 'This shop address is not configured. Check the subdomain and try again.';
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
     liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; licenseInfo=signed.license||setup.license||null;
