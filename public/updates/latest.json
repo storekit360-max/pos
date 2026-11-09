@@ -4,9 +4,9 @@
   "platforms": {},
   "ui": {
     "revision": "2edfab653406",
-    "minShell": "1.4.0",
+    "minShell": "1.4.1",
     "notes": "Improvements and fixes.",
-    "builtAt": "2026-11-09T05:08:03.004Z",
+    "builtAt": "2026-11-09T09:32:52.598Z",
     "files": [
       {
         "path": "customer-display.html",

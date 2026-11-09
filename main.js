@@ -254,7 +254,7 @@ const legacyLicenseKeys = {
 // Public key for signed desktop entitlements. The matching private key belongs
 // only in the live server's DESKTOP_LICENSE_PRIVATE_KEY environment variable.
 const desktopLicensePublicKey = `-----BEGIN PUBLIC KEY-----
-__DESKTOP_LICENSE_PUBLIC_KEY__
+MCowBQYDK2VwAyEAqXAJKoC+mkMIvCkDPcKVl9HEqFDe+BIQk4BTuw5CYRA=
 -----END PUBLIC KEY-----`;
 function readLicense() { try { return JSON.parse(fs.readFileSync(licenseFile(), 'utf8')); } catch { return null; } }
 function writeLicense(data) { fs.mkdirSync(path.dirname(licenseFile()), { recursive: true }); fs.writeFileSync(licenseFile(), JSON.stringify(data)); }
