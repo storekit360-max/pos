@@ -113,7 +113,7 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
     await flush(); if (window.posApi) licenseInfo = await window.posApi.startLicense(); loginScreen(); toast('Setup complete. Your 24-hour trial has started.'); };
 }
 
-let liveSetupRequired = null, liveRegistrationOpen = false;
+let liveSetupRequired = null, liveRegistrationOpen = false, liveTenant = null;
 function showProcessing(title, message) {
   let el = document.getElementById('authProcessing');
   if (!el) { el = document.createElement('div'); el.id = 'authProcessing'; el.className = 'auth-processing'; el.setAttribute('role','status'); el.setAttribute('aria-live','polite'); document.body.append(el); }
@@ -121,7 +121,7 @@ function showProcessing(title, message) {
   el.hidden = false;
 }
 function hideProcessing() { const el = document.getElementById('authProcessing'); if (el) el.hidden = true; }
-const isTenantHost = () => location.hostname.split('.').length > 2 && !location.hostname.endsWith('.vercel.app');
+const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 
 async function liveSignIn(username, password) {
   const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
@@ -166,8 +166,8 @@ function liveAuthScreen(view, opts = {}) {
 <details class="full"><summary class="mut" style="cursor:pointer;font-size:13px">More shop details (optional)</summary><div class="fg" style="margin-top:8px">${[['phone', 'Phone', s.phone], ['currency', 'Currency symbol', s.currency], ['address', 'Address', s.address]].map(([k, l, v]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"></label>`).join('')}</div></details>
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
-  const tenantHost = isTenantHost();
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(tenantHost ? 'MacBook' : s.business)}</h2><p class="mut">${esc(tenantHost ? 'Point of Sale' : (s.tagline || ''))}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${liveSetupRequired ? tab('setup', 'Create shop') : liveRegistrationOpen && !tenantHost ? tab('register', 'Create account') : ''}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+  const tenantHost = isTenantHost(), showAuthTabs = liveRegistrationOpen && !tenantHost && !isSetup;
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business || liveTenant?.branding?.business || 'POS')}</h2><p class="mut">${esc(s.tagline || liveTenant?.branding?.tagline || '')}</p></div>${alertBox}${showAuthTabs ? `<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('register', 'Create POS')}</div>` : ''}<div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
 
   document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
   const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
@@ -254,7 +254,14 @@ document.addEventListener('keydown', e => {
       cloudLastError = 'This shop address is not configured. Check the subdomain and try again.';
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
-    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; licenseInfo=signed.license||setup.license||null;
+    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null;
+    if (liveTenant?.branding) {
+      db.settings.business = liveTenant.branding.business || db.settings.business;
+      db.settings.tagline = liveTenant.branding.tagline || db.settings.tagline;
+      db.settings.accent = liveTenant.branding.accent || db.settings.accent;
+      applyTheme();
+    }
+    licenseInfo=signed.license||setup.license||null;
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
