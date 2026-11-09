@@ -250,7 +250,12 @@ function parseCSV(t) {
   if (c || row.length) { row.push(c); rows.push(row); } return rows.filter(r => r.some(x => x.trim()));
 }
 function pickFile(accept, cb) { const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.onchange = () => { const f = i.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => cb(r.result, f); r.readAsText(f); }; i.click(); }
-function applyTheme() { document.documentElement.style.setProperty('--acc', S().accent); document.documentElement.style.setProperty('--acc2', S().accent); document.body.classList.toggle('dark', !!S().dark); }
+function applyTheme() {
+  const accent = defaults().settings.accent;
+  document.documentElement.style.setProperty('--acc', accent);
+  document.documentElement.style.setProperty('--acc2', accent);
+  document.body.classList.toggle('dark', !!S().dark);
+}
 
 /* ---------- accounting ---------- */
 function stats(from, to) {

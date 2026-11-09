@@ -5,6 +5,13 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'; font-src 'self' data:">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POS</title>
+<script>
+// Keep the initial login/setup screen on the product's default accent.
+(() => {
+  document.documentElement.style.setProperty('--acc', '#f97316');
+  document.documentElement.style.setProperty('--acc2', '#ea580c');
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
