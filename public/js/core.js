@@ -70,14 +70,15 @@ async function syncCloud() {
   if (!LIVE_WEB || !me || cloudSyncBusy || !navigator.onLine) return;
   cloudSyncBusy = true;
   try {
+    if (typeof licenseInfo !== 'undefined' && licenseInfo?.state === 'expired') { cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; showCloudSyncStatus(); return; }
     const local = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
     if (!cloudBaseData || !cloudMutationId || !local) { cloudLastError = 'Cloud baseline is unavailable. Reload while online before syncing changes.'; return; }
     const r = await fetch('/api/data', {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({data:local,baseRevision:cloudRevision,clientMutationId:cloudMutationId})});
     const result = await r.json();
-    if (!r.ok) { if (r.status === 409) cloudLastError = 'Cloud data changed in another session. Local edits are preserved on this device; export them before resolving the conflict.'; else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; if (r.status===409) showCloudSyncStatus(); return; }
+    if (!r.ok) { if (r.status === 409) cloudLastError = 'Cloud data changed in another session. Local edits are preserved on this device; export them before resolving the conflict.'; else if (r.status === 402 && result.code === 'LICENSE_EXPIRED') { if(typeof licenseInfo!=='undefined')licenseInfo={...(licenseInfo||{}),state:'expired',message:result.error}; cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; nav(current); showCloudSyncStatus(); } else if (r.status === 403 && result.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me = null; loginScreen(); showCloudSyncStatus(); } else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; if (r.status===409) showCloudSyncStatus(); return; }
     cloudRevision = result.revision; cloudBaseData = JSON.parse(JSON.stringify(local)); cloudMutationId = ''; localStorage.removeItem(LS_KEY + ':pending'); cloudLastError = '';
   } catch (_) { cloudLastError = 'Offline changes are saved on this device and will sync when reconnected.'; }
-  finally { cloudSyncBusy = false; if (cloudLastError && me && navigator.onLine && !cloudLastError.startsWith('Cloud data changed')) { clearTimeout(cloudSyncTimer); cloudSyncTimer=setTimeout(syncCloud,5000); } }
+  finally { cloudSyncBusy = false; if (cloudLastError && me && navigator.onLine && !cloudLastError.startsWith('Cloud data changed') && !cloudLastError.startsWith('Your subscription expired')) { clearTimeout(cloudSyncTimer); cloudSyncTimer=setTimeout(syncCloud,5000); } }
 }
 window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); });
 async function refreshCloudThenSync() {
@@ -85,6 +86,7 @@ async function refreshCloudThenSync() {
   try {
     const r = await fetch('/api/data',{credentials:'same-origin'}), response=await r.json();
     if (r.status === 401) { me=null; loginScreen(); return; }
+    if (r.status === 403 && response.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me=null; loginScreen(); showCloudSyncStatus(); return; }
     if (!r.ok) throw new Error(response.error || 'Could not refresh cloud data');
     if (JSON.stringify(response.data) !== JSON.stringify(cloudBaseData)) {
       const local=JSON.parse(localStorage.getItem(LS_KEY)||'null');

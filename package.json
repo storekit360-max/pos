@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "node launch.js",
+    "seed:superadmin": "node scripts/seed-superadmin.js",
     "dist:win": "electron-builder --win nsis --x64 && node scripts/prepare-client.js win",
     "dist:mac": "electron-builder --mac dmg zip --arm64 && electron-builder --mac dmg zip --x64 && node scripts/prepare-client.js mac",
     "dist:mac:x64": "electron-builder --mac dmg zip --x64 && node scripts/prepare-client.js mac-x64",
