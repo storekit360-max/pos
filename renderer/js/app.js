@@ -3,6 +3,14 @@
 const NAV = [['dashboard', 'Dashboard', '📊', 'mgr'], ['pos', 'Point of Sale', '🛒', 'all'], ['sales', 'Sales & Returns', '🧾', 'all'], ['invoice', 'Invoice', '📄', 'mgr'], ['quotations', 'Quotations', '📝', 'mgr'], ['products', 'Products', '📦', 'mgr'], ['barcodes', 'Barcode Labels', '🏷️', 'mgr'], ['inventory', 'Inventory', '📋', 'mgr'], ['purchases', 'Purchases', '🚚', 'mgr'], ['suppliers', 'Suppliers', '🏭', 'mgr'], ['customers', 'Customers', '👥', 'all'], ['expenses', 'Expenses', '💸', 'mgr'], ['register', 'Cash Register', '💵', 'all'], ['reports', 'Reports', '📈', 'mgr'], ['taxes', 'VAT', '🧮', 'mgr'], ['users', 'Users', '🔐', 'owner'], ['attendance', 'Attendance', '🗓️', 'mgr'], ['settings', 'Settings & Backup', '⚙️', 'owner']];
 let current = 'dashboard', failCount = 0, lockUntil = 0;
 let licenseInfo = null;
+async function readApiResponse(response, fallback) {
+  const text = await response.text();
+  let body;
+  try { body = text ? JSON.parse(text) : {}; }
+  catch { throw Error(response.ok ? 'The live service returned an invalid response. Please try again.' : `${fallback} (HTTP ${response.status}); the live service returned an unexpected response.`); }
+  if (!response.ok) throw Error(body.error || `${fallback} (HTTP ${response.status})`);
+  return body;
+}
 function licenseScreen() {
   $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2>License required</h2><p class="mut">${licenseInfo?.type === 'trial' ? 'Your 24-hour trial has ended.' : 'Enter a license key to continue using POS.'}</p><form id="licenseForm"><input id="licenseKey" autocomplete="off" placeholder="License key" required><button class="btn btn-p btn-lg" type="submit">Unlock system</button></form></div></div>`;
   $('#licenseForm').onsubmit = async e => { e.preventDefault(); const r = await window.posApi.activateLicense($('#licenseKey').value); if (!r.ok) return toast(r.error, 'err'); licenseInfo = r.status; if (db.users.length) loginScreen(); else setupScreen(); toast(licenseInfo.type === 'permanent' ? 'System permanently unlocked' : licenseInfo.type === 'monthly' ? 'System unlocked for 30 days' : 'System unlocked for 7 days'); };
@@ -65,8 +73,8 @@ function loginScreen() {
     if (LIVE_WEB) {
       try {
         const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:$('#lu').value.trim().toLowerCase(),password:$('#lp').value})});
-        const result = await r.json(); if (!r.ok) throw Error(result.error || 'Sign-in failed');
-        const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await cloud.json(); if (!cloud.ok) throw Error(response.error || 'Could not load cloud data');
+        const result = await readApiResponse(r, 'Sign-in failed');
+        const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
         cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters); localStorage.setItem(LS_KEY,JSON.stringify(db));
         me=result.user; log('login',me.username); await flush(); shell(); return;
       } catch (err) { toast(err.message || 'Live sign-in failed','err'); return; }
@@ -94,7 +102,7 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
 function liveSetupScreen() {
   $('#app').innerHTML = `<div class="login"><div class="card" style="width:520px;text-align:left"><h2>Set up live POS</h2><p class="mut">This is a one-time step for the deployed shared shop. Create its first owner account using the private setup secret configured by the site administrator. After setup, all browsers use the existing-account sign-in screen.</p><form id="liveSetup" class="fg"><label class="f full"><span>Setup secret *</span><input name="secret" type="password" required></label><label class="f"><span>Business name *</span><input name="business" required></label><label class="f"><span>Owner name *</span><input name="name" required></label><label class="f"><span>Username *</span><input name="username" required minlength="3"></label><label class="f"><span>Password * (min 10)</span><input name="password" type="password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create owner account</button></form><p class="mut" style="margin-top:14px;font-size:13px">Already set up? Reload the deployed site and sign in with your existing account.</p></div></div>`;
   $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f=e.target.elements, body={setupSecret:f.secret.value,business:f.business.value.trim(),name:f.name.value.trim(),username:f.username.value.trim().toLowerCase(),password:f.password.value};
-    try { const r=await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)}), result=await r.json(); if(!r.ok)throw Error(result.error||'Setup failed'); toast('Live shop is ready. Sign in with the owner account.'); loginScreen(); }
+    try { const r=await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)}); await readApiResponse(r, 'Setup failed'); toast('Live shop is ready. Sign in with the owner account.'); loginScreen(); }
     catch(err){toast(err.message||'Setup failed','err');}
   };
 }
@@ -119,16 +127,15 @@ document.addEventListener('keydown', e => {
     let status, setup;
     try {
       status = await fetch('/api/auth?mode=status',{credentials:'same-origin'});
-      setup = await status.json();
-      if (!status.ok) throw Error(setup.error || `Live service returned ${status.status}`);
+      setup = await readApiResponse(status, 'Could not check live account setup');
     } catch (err) {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
     if (setup.setupRequired) { liveSetupScreen(); window.updateUi?.start(); return; }
-    const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await auth.json();
+    const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await readApiResponse(auth, 'Could not check sign-in status');
     if (signed.authenticated) {
-      const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await cloud.json(); if(!cloud.ok)throw Error(response.error||'Could not load cloud data');
+      const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters);
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();}
