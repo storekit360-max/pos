@@ -37,6 +37,7 @@ function nav(name) {
 A.nav = id => nav(id);
 
 function shell() {
+  hideProcessing();
   applyTheme();
   document.title = 'POS';
   $('#app').innerHTML = `<div class="shell"><aside class="side"><div class="brand"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><div><b>${esc(S().business)}</b><small>${esc(S().tagline || '')}</small></div></div>
@@ -88,7 +89,7 @@ function loginScreen() {
         const result = await readApiResponse(r, 'Sign-in failed'); licenseInfo=result.license||null;
         const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
         cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {}); localStorage.setItem(LS_KEY,JSON.stringify(db));
-        me=result.user; log('login',me.username); await flush(); shell(); return;
+        me=result.user; log('login',me.username); shell(); return;
       } catch (err) { toast(err.message || 'Live sign-in failed','err'); return; }
     }
     const u = db.users.find(x => x.username === $('#lu').value.trim().toLowerCase() && x.active), h = u && await hashPw(u.username, $('#lp').value);
@@ -123,6 +124,14 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
 }
 
 let liveSetupRequired = null, liveRegistrationOpen = false, liveTenant = null;
+function applyTenantBranding() {
+  if (!liveTenant?.branding || !db?.settings) return;
+  const branding = liveTenant.branding;
+  db.settings.business = branding.business || db.settings.business;
+  db.settings.tagline = branding.tagline || db.settings.tagline;
+  if (/^#[0-9a-f]{6}$/i.test(branding.accent || '')) db.settings.accent = branding.accent;
+  applyTheme();
+}
 function showProcessing(title, message) {
   let el = document.getElementById('authProcessing');
   if (!el) { el = document.createElement('div'); el.id = 'authProcessing'; el.className = 'auth-processing'; el.setAttribute('role','status'); el.setAttribute('aria-live','polite'); document.body.append(el); }
@@ -139,7 +148,7 @@ async function liveSignIn(username, password) {
   cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data && typeof response.data === 'object' ? response.data : defaults();
   db = normalizeData(db);
   localStorage.setItem(LS_KEY, JSON.stringify(db));
-  me = result.user; licenseInfo=result.license||null; log('login', me.username); await flush(); shell();
+  me = result.user; licenseInfo=result.license||null; log('login', me.username); shell();
 }
 
 function startupScreen() {
@@ -264,20 +273,16 @@ document.addEventListener('keydown', e => {
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
     liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null;
-    if (liveTenant?.branding) {
-      db.settings.business = liveTenant.branding.business || db.settings.business;
-      db.settings.tagline = liveTenant.branding.tagline || db.settings.tagline;
-      db.settings.accent = liveTenant.branding.accent || db.settings.accent;
-      applyTheme();
-    }
+    applyTenantBranding();
     licenseInfo=signed.license||setup.license||null;
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) throw new Error('The shop data is missing or invalid. Contact support to restore this shop.');
       cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=normalizeData(response.data);
+      applyTenantBranding();
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
-      if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();}
+      if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();applyTenantBranding();}
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
       me=signed.user; licenseInfo=signed.license||null; shell(); if(cloudMutationId)queueCloudSync();
     } else { db = normalizeData(defaults()); loginScreen(); }
