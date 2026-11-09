@@ -17,7 +17,10 @@ module.exports = async (req,res) => {
         const slug=String(new URL(req.url,'https://pos.invalid').searchParams.get('value')||'').trim().toLowerCase();
         if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
         const used=await database.collection('tenants').findOne({slug},{projection:{_id:1}});
-        return json(res,200,{available:!used,valid:true,subdomain:process.env.POS_ROOT_DOMAIN?`${slug}.${String(process.env.POS_ROOT_DOMAIN).replace(/^https?:\/\//,'').replace(/\/$/,'')}`:null});
+        const root=String(process.env.POS_ROOT_DOMAIN||'').trim().replace(/^https?:\/\//,'').replace(/\/$/,'').toLowerCase();
+        // Vercel's shared *.vercel.app hostnames cannot be delegated as wildcard domains.
+        const subdomain=root&&!root.endsWith('.vercel.app')?`${slug}.${root}`:null;
+        return json(res,200,{available:!!subdomain&&!used,valid:true,subdomain});
       }
       if (new URL(req.url,'https://pos.invalid').searchParams.get('mode') === 'status') {
         if (hostSlug(req) && !hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
@@ -63,7 +66,8 @@ module.exports = async (req,res) => {
       const un = String(username || '').trim().toLowerCase();
       const shopName=String(business||'').trim(),slug=String(requestedSlug||'').trim().toLowerCase();
       if (hostSlug(req)) return json(res,400,{error:'Create a shop from the main domain, not a shop subdomain'});
-      if (!String(process.env.POS_ROOT_DOMAIN||'').trim()) return json(res,503,{error:'Shop subdomains are not configured yet'});
+      const configuredRoot=String(process.env.POS_ROOT_DOMAIN||'').trim().replace(/^https?:\/\//,'').replace(/\/$/,'').toLowerCase();
+      if (!configuredRoot || configuredRoot.endsWith('.vercel.app')) return json(res,503,{error:'Shop subdomains need a custom domain with wildcard DNS and TLS configured in Vercel. A *.vercel.app address cannot be used.'});
       if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter a business name, available POS address, owner name, valid username, and password of at least 10 characters'});
       if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:`${slug}.${String(process.env.POS_ROOT_DOMAIN||'').trim().replace(/^https?:\/\//,'').replace(/\/$/,'')} is already taken`});
       const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:String(name).trim(),username:un,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
