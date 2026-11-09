@@ -1,11 +1,28 @@
 'use strict';
 (() => {
   const $=s=>document.querySelector(s), main=$('#main'), nav=$('#nav'), notice=$('#notice'), modal=$('#modal');
-  let csrf='', admin=null, page=1, tenantName='';
+  let csrf='', admin=null, page=1, tenantName='', pending=null;
   const el=(tag,text,cls)=>{const x=document.createElement(tag);if(text!==undefined)x.textContent=String(text);if(cls)x.className=cls;return x;};
   const safeCsv=rows=>rows.map(row=>row.map(value=>{let s=String(value??'');if(typeof value==='string'&&/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}).join(',')).join('\r\n');
   const btn=(label,fn,cls='')=>{const b=el('button',label,cls);b.type='button';b.addEventListener('click',fn);return b;};
-  const api=async(route,body,method)=>{const m=method|| (body?'POST':'GET'),h={'Accept':'application/json'},parts=route.split('&'),url=`/api/superadmin?r=${encodeURIComponent(parts.shift())}${parts.length?'&'+parts.join('&'):''}`;if(body)h['Content-Type']='application/json';if(csrf&&m!=='GET')h['X-CSRF-Token']=csrf;const r=await fetch(url,{method:m,headers:h,credentials:'same-origin',body:body?JSON.stringify(body):undefined});let d={};try{d=await r.json();}catch(_){}if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d;};
+  const api=async(route,body,method)=>{
+    const m=method|| (body?'POST':'GET'),h={'Accept':'application/json'},parts=route.split('&'),name=parts[0],url=`/api/superadmin?r=${encodeURIComponent(parts.shift())}${parts.length?'&'+parts.join('&'):''}`;
+    if(body)h['Content-Type']='application/json';
+    if(csrf&&m!=='GET')h['X-CSRF-Token']=csrf;
+    let r;
+    try{r=await fetch(url,{method:m,headers:h,credentials:'same-origin',body:body?JSON.stringify(body):undefined});}
+    catch(_){throw Object.assign(Error('Cannot reach the server. Check your connection and try again.'),{code:'NETWORK'});}
+    let d={};try{d=await r.json();}catch(_){}
+    if(!r.ok){
+      const err=Object.assign(Error(d.error||(r.status===404?'The superadmin API was not found on this server.':`Request failed (${r.status})`)),{status:r.status,code:d.code});
+      if(admin&&name!=='session.login'&&(d.code==='UNAUTHENTICATED'||d.code==='MFA_REQUIRED')){
+        err.handled=true;
+        endSession(d.code==='MFA_REQUIRED'?'Two-factor setup was not completed. Please sign in again.':'Your session has expired. Please sign in again.');
+      }
+      throw err;
+    }
+    return d;
+  };
   const toast=(msg,bad=false)=>{notice.replaceChildren();const x=el('div',msg,`toast${bad?' error':''}`);x.setAttribute('role','status');notice.append(x);};
   const heading=(title,...actions)=>{const h=el('div',undefined,'title');h.append(el('h1',title));for(const a of actions)h.append(a);main.replaceChildren(h);};
   const card=(title)=>{const c=el('section',undefined,'card');if(title)c.append(el('h2',title));main.append(c);return c;};
@@ -14,7 +31,115 @@
   const table=(headers,items,render)=>{const wrap=el('div',undefined,'scroll'),t=el('table'),thead=el('thead'),tr=el('tr');headers.forEach(h=>tr.append(el('th',h)));thead.append(tr);t.append(thead);const tb=el('tbody');items.forEach(item=>{const r=el('tr');render(r,item);tb.append(r);});t.append(tb);wrap.append(t);return wrap;};
   const modalShow=(title,content,actions)=>{$('#modal-title').textContent=title;const b=$('#modal-body');b.replaceChildren();if(typeof content==='string')b.append(el('p',content));else b.append(content);const a=$('#modal-actions');a.replaceChildren(...actions);modal.hidden=false;actions[0]?.focus();};
   const secret=(label,value)=>{const box=el('div'),x=el('p',label),v=el('code',value,'mono');box.append(x,v);modal.dataset.secret='true';modalShow('Save this secret now',box,[btn('Copy',async()=>{await navigator.clipboard.writeText(value);toast('Copied to clipboard');}),btn('I have saved it',()=>{modal.dataset.secret='false';modal.hidden=true;})]);};
-  async function signIn(){main.replaceChildren();const c=card('Super admin sign in'),form=el('form'),email=field('Email','email','','email'),pass=field('Password','password','','password'),code=field('Authenticator or recovery code','text','','totp-code'),submit=btn('Sign in',()=>{},'primary');submit.type='submit';form.append(email,pass,code,submit);form.addEventListener('submit',async e=>{e.preventDefault();submit.disabled=true;try{const r=await api('session.login',{email:email.control.value,password:pass.control.value,code:code.control.value});csrf=r.csrf;admin=r.admin||{email:r.email,role:r.role};if(r.mfaEnrollmentRequired){const box=el('div');box.append(el('p','Add this secret to your authenticator app, then enter the current six digit code.'));box.append(el('code',r.totpSecret,'mono'));const confirmCode=field('Authenticator code','text','','code');box.append(confirmCode);const confirm=btn('Confirm MFA',async()=>{try{const done=await api('session.enroll',{code:confirmCode.control.value});csrf=done.csrf;nav.hidden=false;$('#logout').hidden=false;secret('Recovery codes. Store them securely; they will not be shown again.',done.recoveryCodes.join('\n'));location.hash='#/dashboard';}catch(err){toast(err.message,true);}},'primary');modalShow('Required MFA setup',box,[confirm]);}else{nav.hidden=false;$('#logout').hidden=false;location.hash='#/dashboard';await route();}}catch(err){toast(err.message,true);}finally{submit.disabled=false;}});c.append(form);}
+  /* ================= Sign-in, MFA setup and session handling ================= */
+  const boot=$('#boot'), authBox=$('#auth'), appBox=$('#app'), loginForm=$('#login-form'), enrollForm=$('#enroll-form');
+  const loginEmail=$('#login-email'), loginPass=$('#login-password'), loginCode=$('#login-code'), loginSubmit=$('#login-submit'), loginError=$('#login-error');
+  const enrollCode=$('#enroll-code'), enrollSubmit=$('#enroll-submit'), enrollError=$('#enroll-error');
+  const formMsg=(box,text,info)=>{box.textContent=text||'';box.hidden=!text;box.classList.toggle('info',!!info);};
+  const view=name=>{
+    boot.hidden=true;
+    appBox.hidden=name!=='app';
+    authBox.hidden=name==='app';
+    loginForm.hidden=name!=='login';
+    enrollForm.hidden=name!=='enroll';
+    document.title=name==='app'?'Smart POS Superadmin':name==='enroll'?'Set up MFA · Smart POS Superadmin':'Sign in · Smart POS Superadmin';
+  };
+  function showLogin(message,info=true){
+    view('login');
+    formMsg(loginError,message,info);
+    loginPass.value='';loginCode.value='';
+    (loginEmail.value?loginPass:loginEmail).focus();
+  }
+  function showEnroll(){
+    view('enroll');
+    formMsg(enrollError,'');
+    const key=pending.secret, label='Smart POS Superadmin';
+    $('#enroll-secret').textContent=key.replace(/(.{4})/g,'$1 ').trim();
+    $('#enroll-link').href=`otpauth://totp/${encodeURIComponent(label)}:${encodeURIComponent(pending.email)}?secret=${key}&issuer=${encodeURIComponent(label)}&algorithm=SHA1&digits=6&period=30`;
+    enrollCode.value='';enrollCode.focus();
+  }
+  function showApp(){
+    view('app');
+    notice.replaceChildren();
+    nav.classList.remove('open');$('#menu').setAttribute('aria-expanded','false');
+    $('#who').textContent=admin?`${admin.email} · ${admin.role}`:'';
+  }
+  function endSession(message,info=true){
+    csrf='';admin=null;pending=null;
+    modal.hidden=true;modal.dataset.secret='false';
+    notice.replaceChildren();
+    showLogin(message,info);
+  }
+  const go=hash=>{if(location.hash===hash)return route();location.hash=hash;};
+  const cleanCode=v=>String(v||'').replace(/\s+/g,'').toLowerCase();
+
+  loginForm.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const email=loginEmail.value.trim(),password=loginPass.value,code=cleanCode(loginCode.value);
+    if(!email.includes('@')||!password){formMsg(loginError,'Enter your email address and password.');(email.includes('@')?loginPass:loginEmail).focus();return;}
+    formMsg(loginError,'');
+    loginSubmit.disabled=true;loginSubmit.textContent='Signing in…';
+    try{
+      const r=await api('session.login',{email,password,code});
+      csrf=r.csrf;
+      loginPass.value='';loginCode.value='';
+      if(r.mfaEnrollmentRequired){
+        pending={email:r.email||email,role:r.role,secret:r.totpSecret};
+        showEnroll();
+      }else{
+        admin=r.admin||{email,role:''};
+        showApp();
+        await go(location.hash&&location.hash!=='#/'?location.hash:'#/dashboard');
+      }
+    }catch(err){
+      loginPass.value='';
+      formMsg(loginError,err.message,false);
+      (err.code==='INVALID_MFA'?loginCode:loginPass).focus();
+    }finally{
+      loginSubmit.disabled=false;loginSubmit.textContent='Sign in';
+    }
+  });
+
+  $('#pw-toggle').addEventListener('click',()=>{
+    const show=loginPass.type==='password';
+    loginPass.type=show?'text':'password';
+    $('#pw-toggle').textContent=show?'Hide':'Show';
+    $('#pw-toggle').setAttribute('aria-pressed',String(show));
+    $('#pw-toggle').setAttribute('aria-label',show?'Hide password':'Show password');
+    loginPass.focus();
+  });
+  const caps=ev=>{if(ev.getModifierState)$('#caps').hidden=!ev.getModifierState('CapsLock');};
+  loginPass.addEventListener('keydown',caps);loginPass.addEventListener('keyup',caps);loginPass.addEventListener('blur',()=>{$('#caps').hidden=true;});
+
+  enrollForm.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const code=cleanCode(enrollCode.value);
+    if(!/^\d{6}$/.test(code)){formMsg(enrollError,'Enter the 6-digit code from your authenticator app.');enrollCode.focus();return;}
+    formMsg(enrollError,'');
+    enrollSubmit.disabled=true;enrollSubmit.textContent='Verifying…';
+    try{
+      const done=await api('session.enroll',{code});
+      csrf=done.csrf;
+      admin={email:pending.email,role:pending.role};pending=null;
+      showApp();
+      await go('#/dashboard');
+      secret('Recovery codes. Store them securely; they will not be shown again.',done.recoveryCodes.join('\n'));
+    }catch(err){
+      if(err.code==='UNAUTHENTICATED'){endSession('Your setup session expired. Please sign in again.');}
+      else{formMsg(enrollError,err.message,false);enrollCode.value='';enrollCode.focus();}
+    }finally{
+      enrollSubmit.disabled=false;enrollSubmit.textContent='Confirm and continue';
+    }
+  });
+  $('#enroll-copy').addEventListener('click',async()=>{
+    try{await navigator.clipboard.writeText(pending.secret);formMsg(enrollError,'Key copied to clipboard.',true);}
+    catch(_){formMsg(enrollError,'Copy failed. Select the key above and copy it manually.');}
+  });
+  $('#enroll-cancel').addEventListener('click',async()=>{
+    try{await api('session.logout',{});}catch(_){}
+    endSession('Sign-in cancelled. MFA must be set up before you can use the panel.');
+  });
+
   async function dashboard(){const d=await api('dashboard');heading('Dashboard');const g=el('div',undefined,'grid');for(const [k,v]of Object.entries(d.counts||{})){const c=el('div',undefined,'card metric');c.append(el('small',k),el('b',v));g.append(c);}main.append(g);const stats=card('Usage and revenue');stats.append(el('p',`Revenue this month: LKR ${Number(d.revenueThisMonth||0).toLocaleString()}`),el('p',`Users: ${d.totalUsers||0} · Stored POS data: ${(Number(d.storageBytes||0)/1048576).toFixed(2)} MB`));const recent=card('Recent activity');recent.append(table(['When','Actor','Action','Summary'],d.recentAudit||[],(tr,x)=>[x.ts,x.actorEmail,x.action,x.summary].forEach(v=>tr.append(el('td',v||'')))));}
   async function tenants(){heading('Tenants',btn('Create tenant',createTenant,'primary'));const filters=row(),q=field('Search','search','','search');q.control.placeholder='Name, slug or email';const state=field('State','select');['','trial','active','grace','expired','suspended','cancelled','deleted'].forEach(v=>{const o=el('option',v||'All states');o.value=v;state.control.append(o);});filters.append(q,state);let timer;const list=async()=>{try{const d=await api(`tenants.list&page=${page}&limit=25&search=${encodeURIComponent(q.control.value)}&state=${state.control.value}`);const c=card('Shop accounts');if(!d.items?.length){c.append(el('p','No tenants match this search.','empty'));return;}c.append(table(['Shop','State','Plan','Staff','Data','Expiry',''],d.items,(tr,t)=>{tr.append(el('td',t.name),el('td',t.status),el('td',t.planSnapshot?.name||''),el('td',t.userCount),el('td',`${(t.dataBytes/1048576).toFixed(2)} MB`),el('td',t.expiresAt||t.trialEndsAt||'—'));const td=el('td',undefined,'actions');td.append(btn('Open',()=>{location.hash=`#/tenants/${encodeURIComponent(t._id)}`;}));tr.append(td);}));const p=el('p',`Page ${d.page} · ${d.total} tenants`);p.append(btn('Previous',()=>{page=Math.max(1,page-1);tenants();}),btn('Next',()=>{page=Math.min(Math.ceil(d.total/25),page+1);tenants();}));c.append(p);}catch(e){toast(e.message,true);}};q.control.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{page=1;tenants();},250);});state.control.addEventListener('change',()=>{page=1;tenants();});await list();}
   function createTenant(){const box=el('div'),fields={};[['Shop name','name'],['Slug','slug'],['Owner name','ownerName'],['Username','username'],['Email','email'],['Phone','phone'],['Trial days','trialDays']].forEach(([l,n])=>{fields[n]=field(l,n==='trialDays'?'number':'text',n==='trialDays'?'14':'',n);box.append(fields[n]);});modalShow('Create tenant with owner',box,[btn('Create',async()=>{const b={};for(const[k,v]of Object.entries(fields))b[k]=v.control.value;try{const d=await api('tenants.create',b);modal.hidden=true;secret(`Temporary password for ${d.owner.username}`,d.temporaryPassword);tenantName=d.tenant.name;}catch(e){toast(e.message,true);}},'primary'),btn('Cancel',()=>modal.hidden=true)]);}
@@ -29,9 +154,20 @@
   async function auditPage(){heading('Audit log',btn('Export CSV',async()=>{try{const d=await api('audit.csv'),blob=new Blob([d.csv],{type:'text/csv'}),a=el('a');a.href=URL.createObjectURL(blob);a.download='superadmin-audit.csv';a.click();URL.revokeObjectURL(a.href);}catch(e){toast(e.message,true);}}));const d=await api(`audit.list&page=${page}&limit=50`),c=card(`${d.total} entries`);c.append(table(['Time','Actor','Role','Action','Tenant','Summary'],d.items||[],(tr,x)=>[x.ts,x.actorEmail,x.role,x.action,x.tenantId||'—',x.summary].forEach(v=>tr.append(el('td',v||'')))));c.append(btn('Previous',()=>{page=Math.max(1,page-1);auditPage();}),btn('Next',()=>{page++;auditPage();}));}
   async function backups(){heading('Backups and data tools',el('span','Take an Atlas snapshot before restoring.','muted'));const box=el('div'),id=field('Tenant ID'),download=btn('Export JSON',async()=>{try{await downloadTenant(id.control.value);}catch(e){toast(e.message,true);}});box.append(id,download);card('Tenant export').append(box);const restore=el('div'),file=field('Backup JSON','file'),confirm=field('Type tenant name to confirm restore');file.control.accept='application/json,.json';const b=btn('Restore from file',async()=>{const f=file.control.files?.[0];if(!f){toast('Choose a tenant backup JSON file first.',true);return;}try{const backup=JSON.parse(await f.text());if(!backup.tenant?._id||!backup.tenant?.name||!backup.data)throw Error('The selected file is not a valid tenant export.');if(confirm.control.value!==backup.tenant.name)throw Error('Typed tenant name does not match the backup.');await api('backups.restore',{tenantId:backup.tenant._id,confirmName:confirm.control.value,data:backup.data});toast('Restore completed after a pre-restore snapshot.');}catch(e){toast(e.message,true);}},'danger');restore.append(el('p','Restoring replaces the current POS data. An application snapshot is made first; take an Atlas snapshot as well.'),file,confirm,b);card('Restore tenant data').append(restore);}
   async function releases(){heading('Releases and health');const [r,h]=await Promise.all([api('releases'),api('health')]),c=card('Deployment');c.append(el('p',`Installer version: ${r.version||'Unavailable'}`),el('p',`UI revision: ${r.ui?.revision||'Unavailable'}`),el('p',`UI notes: ${r.ui?.notes||'—'} · Minimum shell: ${r.ui?.minShell||'—'}`));const health=card('Health');health.append(el('p',`MongoDB: ${h.mongo.ok?'Online':'Unavailable'} (${h.mongo.latencyMs} ms)`),el('p',`Region: ${h.region} · System errors (24 h): ${h.recentSystemErrors}`));}
-  async function settings(){heading('Settings');const d=await api('settings.get'),box=el('div'),trial=field('Default trial days','number',d.settings.defaultTrialDays),grace=field('Default grace days','number',d.settings.defaultGraceDays),contact=field('Renewal contact message','textarea',d.settings.supportContact);box.append(trial,grace,contact);const c=card('Defaults');c.append(box,btn('Save settings',async()=>{try{await api('settings.save',{defaultTrialDays:+trial.control.value,defaultGraceDays:+grace.control.value,supportContact:contact.control.value});toast('Settings saved');}catch(e){toast(e.message,true);}},'primary'));const current=await api('session.me'),sessions=await api('session.sessions'),sc=card('Active super admin sessions');sc.append(table(['Created','Last active','IP'],sessions.items||[],(tr,s)=>[s.createdAt,s.lastSeenAt,s.ip].forEach(v=>tr.append(el('td',v||'')))));sc.append(btn('Sign out everywhere',async()=>{try{await api('session.sessions',{},'POST');csrf='';admin=null;nav.hidden=true;$('#logout').hidden=true;await signIn();}catch(e){toast(e.message,true);}},'danger'));const pc=card('Change your password'),prow=el('div',undefined,'row'),oldPw=field('Current password','password'),newPw=field('New password (14+ characters)','password'),confirmPw=field('Confirm new password','password');prow.append(oldPw,newPw,confirmPw);pc.append(prow,btn('Change password',async()=>{try{if(newPw.control.value!==confirmPw.control.value)throw Error('New passwords do not match.');await api('session.password',{currentPassword:oldPw.control.value,newPassword:newPw.control.value});toast('Password changed');oldPw.control.value='';newPw.control.value='';confirmPw.control.value='';}catch(e){toast(e.message,true);}},'primary'));if(current.admin.role==='root'){const admins=await api('admins.list'),ac=card('Super admin accounts');ac.append(table(['Email','Role','Status','MFA','Actions'],admins.items||[],(tr,a)=>{[a.email,a.role,a.active?'Active':'Disabled',a.mfaEnabled?'Enabled':'Required at next sign-in'].forEach(v=>tr.append(el('td',v||'')));const td=el('td',undefined,'actions');td.append(btn(a.active?'Disable':'Enable',async()=>{try{await api('admins.save',{id:a.id,active:!a.active});await settings();}catch(e){toast(e.message,true);}}));if(a.id!==admin.id){const next=field('Role','select');['root','billing','support','readonly'].forEach(v=>{const o=el('option',v);o.value=v;o.selected=v===a.role;next.control.append(o);});td.append(next,btn('Update role',async()=>{try{await api('admins.save',{id:a.id,role:next.control.value});await settings();}catch(e){toast(e.message,true);}}),btn('Reset MFA',async()=>{try{await api('admins.save',{id:a.id,resetMfa:true});toast('MFA reset; enrollment is required at next sign in');await settings();}catch(e){toast(e.message,true);}}));}tr.append(td);}));const email=field('New admin email','email'),role=field('Role','select'),pw=field('Temporary password (min 14)','password');['billing','support','readonly','root'].forEach(v=>{const o=el('option',v);o.value=v;role.control.append(o);});ac.append(email,role,pw,btn('Create admin',async()=>{try{await api('admins.save',{action:'create',email:email.control.value,role:role.control.value,password:pw.control.value});toast('Admin created. MFA enrollment is required at first sign-in.');await settings();}catch(e){toast(e.message,true);}},'primary'));}}
+  async function settings(){heading('Settings');const d=await api('settings.get'),box=el('div'),trial=field('Default trial days','number',d.settings.defaultTrialDays),grace=field('Default grace days','number',d.settings.defaultGraceDays),contact=field('Renewal contact message','textarea',d.settings.supportContact);box.append(trial,grace,contact);const c=card('Defaults');c.append(box,btn('Save settings',async()=>{try{await api('settings.save',{defaultTrialDays:+trial.control.value,defaultGraceDays:+grace.control.value,supportContact:contact.control.value});toast('Settings saved');}catch(e){toast(e.message,true);}},'primary'));const current=await api('session.me'),sessions=await api('session.sessions'),sc=card('Active super admin sessions');sc.append(table(['Created','Last active','IP'],sessions.items||[],(tr,s)=>[s.createdAt,s.lastSeenAt,s.ip].forEach(v=>tr.append(el('td',v||'')))));sc.append(btn('Sign out everywhere',async()=>{try{await api('session.sessions',{},'POST');endSession('All of your sessions were signed out.');}catch(e){toast(e.message,true);}},'danger'));const pc=card('Change your password'),prow=el('div',undefined,'row'),oldPw=field('Current password','password'),newPw=field('New password (14+ characters)','password'),confirmPw=field('Confirm new password','password');prow.append(oldPw,newPw,confirmPw);pc.append(prow,btn('Change password',async()=>{try{if(newPw.control.value!==confirmPw.control.value)throw Error('New passwords do not match.');await api('session.password',{currentPassword:oldPw.control.value,newPassword:newPw.control.value});toast('Password changed');oldPw.control.value='';newPw.control.value='';confirmPw.control.value='';}catch(e){toast(e.message,true);}},'primary'));if(current.admin.role==='root'){const admins=await api('admins.list'),ac=card('Super admin accounts');ac.append(table(['Email','Role','Status','MFA','Actions'],admins.items||[],(tr,a)=>{[a.email,a.role,a.active?'Active':'Disabled',a.mfaEnabled?'Enabled':'Required at next sign-in'].forEach(v=>tr.append(el('td',v||'')));const td=el('td',undefined,'actions');td.append(btn(a.active?'Disable':'Enable',async()=>{try{await api('admins.save',{id:a.id,active:!a.active});await settings();}catch(e){toast(e.message,true);}}));if(a.email!==current.admin.email){const next=field('Role','select');['root','billing','support','readonly'].forEach(v=>{const o=el('option',v);o.value=v;o.selected=v===a.role;next.control.append(o);});td.append(next,btn('Update role',async()=>{try{await api('admins.save',{id:a.id,role:next.control.value});await settings();}catch(e){toast(e.message,true);}}),btn('Reset MFA',async()=>{try{await api('admins.save',{id:a.id,resetMfa:true});toast('MFA reset; enrollment is required at next sign in');await settings();}catch(e){toast(e.message,true);}}));}tr.append(td);}));const email=field('New admin email','email'),role=field('Role','select'),pw=field('Temporary password (min 14)','password');['billing','support','readonly','root'].forEach(v=>{const o=el('option',v);o.value=v;role.control.append(o);});ac.append(email,role,pw,btn('Create admin',async()=>{try{await api('admins.save',{action:'create',email:email.control.value,role:role.control.value,password:pw.control.value});toast('Admin created. MFA enrollment is required at first sign-in.');await settings();}catch(e){toast(e.message,true);}},'primary'));}}
   async function licenses(){heading('Licenses');const count=field('Number of keys','number','1'),plan=field('Plan ID','text','standard'),c=card('Generate license keys');c.append(count,plan,btn('Generate keys',async()=>{try{const d=await api('licenses.generate',{count:+count.control.value,planId:plan.control.value});const csv=new Blob([safeCsv([['License key'],...d.keys.map(k=>[k])])],{type:'text/csv'}),a=el('a');a.href=URL.createObjectURL(csv);a.download='license-keys-once.csv';a.click();URL.revokeObjectURL(a.href);secret('License keys have also been downloaded once as CSV. Save this list now.',d.keys.join('\n'));}catch(e){toast(e.message,true);}},'primary'));const tenant=field('Tenant ID to redeem into'),key=field('License key'),redeem=card('Redeem license');redeem.append(tenant,key,btn('Apply key',async()=>{try{await api('licenses.redeem',{tenantId:tenant.control.value,key:key.control.value});toast('License applied');await licenses();}catch(e){toast(e.message,true);}},'primary'));const d=await api('licenses.list'),list=card(`${d.total} stored license keys`);list.append(table(['Hint','Status','Tenant','Plan','Created','Actions'],d.items||[],(tr,k)=>{tr.append(el('td',`…${k.keyHint}`),el('td',k.status),el('td',k.tenantId||'—'),el('td',k.planId),el('td',k.createdAt));const td=el('td');td.append(btn('Revoke',()=>modalShow('Revoke license key','This action cannot be undone.',[btn('Revoke',async()=>{try{await api('licenses.revoke',{id:k._id});modal.hidden=true;await licenses();}catch(e){toast(e.message,true);}},'danger'),btn('Cancel',()=>modal.hidden=true)])));tr.append(td);}));}
-  async function route(){if(!admin){await signIn();return;}const hash=location.hash||'#/dashboard',path=hash.slice(2).split('?')[0],parts=path.split('/').filter(Boolean);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')===`#/${parts[0]}`));try{switch(parts[0]){case'dashboard':await dashboard();break;case'tenants':parts[1]?await tenantDetail(decodeURIComponent(parts[1])):await tenants();break;case'plans':await plans();break;case'payments':await payments();break;case'announcements':await announcements();break;case'backups':await backups();break;case'audit':await auditPage();break;case'releases':await releases();break;case'licenses':await licenses();break;case'licenses-old':{const count=field('Number of keys','number','1'),plan=field('Plan ID','text','standard'),c=card('Generate license keys');c.append(count,plan,btn('Generate keys',async()=>{try{const d=await api('licenses.generate',{count:+count.control.value,planId:plan.control.value});secret('License keys. Copy and store them now.',d.keys.join('\n'));}catch(e){toast(e.message,true);}},'primary'));}break;case'settings':await settings();break;default:await dashboard();}}catch(e){toast(e.message,true);}}
-  $('#logout').addEventListener('click',async()=>{try{await api('session.logout',{});}catch(_){}csrf='';admin=null;nav.hidden=true;$('#logout').hidden=true;location.hash='#/';await signIn();});$('#menu').addEventListener('click',()=>nav.hidden=!nav.hidden);modal.addEventListener('click',e=>{if(e.target===modal&&modal.dataset.secret!=='true')modal.hidden=true;});window.addEventListener('hashchange',route);
-  (async()=>{try{const s=await api('session.me');csrf=s.csrfToken;admin=s.admin;nav.hidden=false;$('#logout').hidden=false;}catch(_){}await route();})();
+  async function route(){if(!admin){if(authBox.hidden)showLogin();return;}nav.classList.remove('open');$('#menu').setAttribute('aria-expanded','false');const hash=location.hash||'#/dashboard',path=hash.slice(2).split('?')[0],parts=path.split('/').filter(Boolean);document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')===`#/${parts[0]}`));try{switch(parts[0]){case'dashboard':await dashboard();break;case'tenants':parts[1]?await tenantDetail(decodeURIComponent(parts[1])):await tenants();break;case'plans':await plans();break;case'payments':await payments();break;case'announcements':await announcements();break;case'backups':await backups();break;case'audit':await auditPage();break;case'releases':await releases();break;case'licenses':await licenses();break;case'licenses-old':{const count=field('Number of keys','number','1'),plan=field('Plan ID','text','standard'),c=card('Generate license keys');c.append(count,plan,btn('Generate keys',async()=>{try{const d=await api('licenses.generate',{count:+count.control.value,planId:plan.control.value});secret('License keys. Copy and store them now.',d.keys.join('\n'));}catch(e){toast(e.message,true);}},'primary'));}break;case'settings':await settings();break;default:await dashboard();}}catch(e){if(!e.handled)toast(e.message,true);}}
+  $('#logout').addEventListener('click',async()=>{
+    try{await api('session.logout',{});}catch(_){}
+    history.replaceState(null,'',location.pathname+location.search);
+    endSession('You have been signed out.');
+  });
+  $('#menu').addEventListener('click',()=>{const open=nav.classList.toggle('open');$('#menu').setAttribute('aria-expanded',String(open));});
+  nav.addEventListener('click',e=>{if(e.target.closest('a')){nav.classList.remove('open');$('#menu').setAttribute('aria-expanded','false');}});
+  modal.addEventListener('click',e=>{if(e.target===modal&&modal.dataset.secret!=='true')modal.hidden=true;});
+  window.addEventListener('hashchange',route);
+  (async()=>{
+    try{const s=await api('session.me');csrf=s.csrfToken;admin=s.admin;showApp();await route();}
+    catch(_){if(!admin)showLogin();}
+  })();
 })();

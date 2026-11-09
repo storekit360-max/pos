@@ -5,18 +5,109 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
 <meta name="robots" content="noindex,nofollow">
-<title>Smart POS Superadmin</title>
+<meta name="color-scheme" content="light dark">
+<title>Sign in · Smart POS Superadmin</title>
 <link rel="stylesheet" href="/superadmin/sa.css">
 <script src="/superadmin/sa.js" defer></script>
 </head>
 <body>
-<div class="wrap">
-<header><a class="brand" href="#/dashboard">Smart POS <span>Superadmin</span></a><button id="menu" aria-label="Toggle navigation" aria-controls="nav" aria-expanded="false">Menu</button><button id="logout" hidden>Sign out</button></header>
+
+<!-- Shown only while the page checks for an existing session -->
+<div id="boot" class="boot">Loading…</div>
+
+<!-- ============ SIGN-IN / MFA SETUP SCREENS ============ -->
+<div id="auth" class="auth" hidden>
+  <aside class="auth-side" aria-hidden="true">
+    <div class="mark">SP</div>
+    <h2>The Smart POS</h2>
+    <p>Central control panel for shops, licences and billing.</p>
+    <ul>
+      <li>Tenants, staff and licence control</li>
+      <li>Plans, payments and announcements</li>
+      <li>Backups and a full audit trail</li>
+    </ul>
+  </aside>
+
+  <section class="auth-main">
+    <div class="auth-card">
+      <div class="auth-brand"><div class="mark">SP</div><span>Smart POS <b>Superadmin</b></span></div>
+
+      <noscript><p class="form-error">JavaScript is required to use the control panel.</p></noscript>
+
+      <!-- Step 1: sign in -->
+      <form id="login-form" method="post" action="/superadmin/" novalidate>
+        <h1>Super admin sign in</h1>
+        <p class="muted">Restricted area. Use your super admin account &mdash; shop (client) logins do not work here.</p>
+        <div id="login-error" class="form-error" role="alert" hidden></div>
+
+        <label class="field">
+          <span>Email</span>
+          <input id="login-email" name="email" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <span class="pw">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+            <button type="button" id="pw-toggle" aria-pressed="false" aria-label="Show password">Show</button>
+          </span>
+          <small id="caps" hidden>Caps Lock is on.</small>
+        </label>
+
+        <label class="field">
+          <span>Authenticator or recovery code</span>
+          <input id="login-code" name="code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="32">
+          <small>6-digit code from your authenticator app. Leave empty the first time you sign in &mdash; you will set up MFA next.</small>
+        </label>
+
+        <button type="submit" id="login-submit" class="primary block">Sign in</button>
+        <p class="auth-foot">Protected by multi-factor authentication. Sessions expire automatically.</p>
+      </form>
+
+      <!-- Step 2 (first sign-in only): MFA enrolment -->
+      <form id="enroll-form" method="post" action="/superadmin/" novalidate hidden>
+        <h1>Set up two-factor authentication</h1>
+        <p class="muted">MFA is required for every super admin account before the panel unlocks.</p>
+        <div id="enroll-error" class="form-error" role="alert" hidden></div>
+
+        <ol class="steps">
+          <li>
+            In your authenticator app (Google Authenticator, Microsoft Authenticator, Authy, 1Password&hellip;) add a new account using this key:
+            <div class="keybox"><code id="enroll-secret" class="mono"></code></div>
+            <div class="inline">
+              <button type="button" id="enroll-copy">Copy key</button>
+              <a id="enroll-link" class="linkbtn" href="#">Open in authenticator app</a>
+            </div>
+          </li>
+          <li>Enter the 6-digit code the app shows for this account.</li>
+        </ol>
+
+        <label class="field">
+          <span>6-digit code</span>
+          <input id="enroll-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+        </label>
+
+        <button type="submit" id="enroll-submit" class="primary block">Confirm and continue</button>
+        <button type="button" id="enroll-cancel" class="link">Cancel and sign out</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<!-- ============ CONTROL PANEL (visible only after sign-in) ============ -->
+<div id="app" class="wrap" hidden>
+<header>
+  <a class="brand" href="#/dashboard">Smart POS <span>Superadmin</span></a>
+  <button id="menu" type="button" aria-label="Toggle navigation" aria-controls="nav" aria-expanded="false">Menu</button>
+  <span id="who" class="who"></span>
+  <button id="logout" type="button">Sign out</button>
+</header>
 <div id="notice" role="status" aria-live="polite"></div>
-<div class="layout"><nav id="nav" aria-label="Super admin navigation" hidden>
+<div class="layout"><nav id="nav" aria-label="Super admin navigation">
 <a href="#/dashboard">Dashboard</a><a href="#/tenants">Tenants &amp; staff</a><a href="#/plans">Plans</a><a href="#/licenses">Licenses</a><a href="#/payments">Payments</a><a href="#/announcements">Announcements</a><a href="#/backups">Backups &amp; restore</a><a href="#/audit">Audit log</a><a href="#/releases">Releases &amp; health</a><a href="#/settings">Settings &amp; admins</a>
-</nav><main id="main"><p>Loading control panel…</p></main></div>
+</nav><main id="main"></main></div>
 <div id="modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="dialog"><h2 id="modal-title"></h2><div id="modal-body"></div><div id="modal-actions"></div></div></div>
 </div>
+
 </body>
 </html>
