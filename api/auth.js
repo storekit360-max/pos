@@ -80,5 +80,5 @@ module.exports = async (req,res) => {
     }
     if (mode === 'logout') { clearSession(res); return json(res,200,{ok:true}); }
     return json(res,400,{error:'Invalid authentication action'});
-  } catch (e) { console.error('POS auth failure:',e.message); return json(res,500,{error:e.message.includes('not configured') ? e.message : 'Authentication service is temporarily unavailable'}); }
+  } catch (e) { console.error('POS auth failure:',e.message); return json(res,500,{error:e.publicMessage || (e.message.includes('not configured') ? e.message : 'Authentication service is temporarily unavailable')}); }
 };

@@ -1,6 +1,6 @@
 {
   "buildCommand": "cp -R renderer/. public/ && node scripts/build-ui-manifest.js",
-  "installCommand": "",
+  "installCommand": "npm install --omit=dev",
   "outputDirectory": "public",
   "headers": [
     {
