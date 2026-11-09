@@ -1,6 +1,6 @@
 {
   "name": "the-smart-pos",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "The Smart - POS & Inventory for mobile phone and accessories shop",
   "main": "main.js",
   "scripts": {
@@ -57,5 +57,5 @@
       "runAfterFinish": true
     }
   },
-  "uiMinShell": "1.4.1"
+  "uiMinShell": "1.4.2"
 }

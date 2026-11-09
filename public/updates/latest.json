@@ -3,10 +3,10 @@
   "notes": "VAT and related POS updates. Download is available after the matching platform installer is published.",
   "platforms": {},
   "ui": {
-    "revision": "2edfab653406",
-    "minShell": "1.4.1",
+    "revision": "1e072a414daa",
+    "minShell": "1.4.2",
     "notes": "Improvements and fixes.",
-    "builtAt": "2026-11-09T09:32:52.598Z",
+    "builtAt": "2026-11-09T10:53:27.964Z",
     "files": [
       {
         "path": "customer-display.html",
@@ -20,8 +20,8 @@
       },
       {
         "path": "js/app.js",
-        "sha256": "3dd95f84da3e2fc35ffc5466c8c93e96bfcca032dfae9e3f6603d088ec04de37",
-        "size": 25121
+        "sha256": "2c6d25e02b93e27b986cc6c3eb4d3b0aa77bf714ae6afbbdb566445de7d1845c",
+        "size": 24652
       },
       {
         "path": "js/core.js",
