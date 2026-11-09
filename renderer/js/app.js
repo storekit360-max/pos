@@ -80,6 +80,7 @@ function loginScreen() {
   if (LIVE_WEB) return liveAuthScreen('login');
   $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p>${LIVE_WEB && cloudLastError ? `<p class="mut" role="alert">${esc(cloudLastError)}</p>` : ''}<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in to existing account</button></form>${LIVE_WEB ? '<p class="mut" style="margin-top:14px;font-size:13px">Use an existing live POS account. Accounts and shop data are shared across browsers on this deployed site.</p>' : ''}</div></div>`;
   $('#lf').onsubmit = async e => { e.preventDefault();
+    if (!startupReady) return toast('Starting POS… please wait a moment.', 'err');
     if (Date.now() < lockUntil) return toast(`Too many attempts. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)}s`, 'err');
     if (LIVE_WEB) {
       try {
@@ -94,6 +95,8 @@ function loginScreen() {
     if (u && h === u.hash) { if (!(await refreshLicense())) return; failCount = 0; me = u; log('login', u.username); save(); shell(); }
     else { if (++failCount >= 5) { lockUntil = Date.now() + 30000; failCount = 0; } toast('Invalid username or password', 'err'); } };
 }
+
+let startupReady = false;
 
 function setupScreen() {
   const s = S();
@@ -207,8 +210,11 @@ document.addEventListener('keydown', e => {
 });
 
 (async function boot() {
-  await loadDB();
   if (LIVE_WEB) {
+    // Paint the sign-in form before waiting on local storage or the live service.
+    db = defaults();
+    loginScreen();
+    await loadDB();
     let status, setup, signed;
     try {
       [status, signed] = await Promise.all([
@@ -234,14 +240,23 @@ document.addEventListener('keydown', e => {
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
       me=signed.user; licenseInfo=signed.license||null; shell(); if(cloudMutationId)queueCloudSync();
     } else { db = defaults(); loginScreen(); }
+    startupReady = true;
+    const liveSubmit = $('#lf button[type="submit"]'); if (liveSubmit) liveSubmit.disabled = false;
     window.updateUi?.start(); return;
   }
+  // Local data and license checks may involve disk/IPC work. Keep the login
+  // screen responsive while they finish, then choose setup/license/login.
+  db = defaults();
+  loginScreen();
+  await loadDB();
   if (!db) { db = defaults(); await flush(); }
   if (window.posApi) { window.posApi.setBackup(cfgForMain()); window.posApi.onBackupError(m => toast('BACKUP FAILED: ' + m, 'err')); }
   applyTheme();
   if (window.posApi) licenseInfo = db.users.length ? await window.posApi.startLicense() : await window.posApi.licenseStatus();
   if (licenseInfo?.initialized && !licenseInfo.active) licenseScreen();
   else if (!db.users.length) setupScreen(); else loginScreen();
+  startupReady = true;
+  const localSubmit = $('#lf button[type="submit"]'); if (localSubmit) localSubmit.disabled = false;
   if (window.posApi) setInterval(() => { if (me) refreshLicense(); }, 30000);
   window.updateUi?.start();
   // Confirm the selected screens only after app initialization and initial
