@@ -3,7 +3,7 @@
 const LS_KEY = 'thesmart_pos_v1';
 let db = null, me = null;
 const LIVE_WEB = !window.posApi && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.protocol === 'https:';
-let cloudRevision = 0, cloudSyncTimer = null, cloudSyncBusy = false, cloudLastError = '', cloudBaseData = null, cloudMutationId = '';
+let cloudRevision = 0, cloudSyncTimer = null, cloudSyncBusy = false, cloudRefreshPromise = null, cloudLastError = '', cloudBaseData = null, cloudMutationId = '';
 const A = {}, I = {};                    // click actions (data-act) and input handlers (data-in)
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -72,7 +72,8 @@ async function syncCloud() {
   try {
     if (typeof licenseInfo !== 'undefined' && licenseInfo?.state === 'expired') { cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; showCloudSyncStatus(); return; }
     const local = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (!cloudBaseData || !cloudMutationId || !local) { cloudLastError = 'Cloud baseline is unavailable. Reload while online before syncing changes.'; return; }
+    if (!cloudBaseData) { await refreshCloudThenSync(); return; }
+    if (!cloudMutationId || !local) return;
     const r = await fetch('/api/data', {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({data:local,baseRevision:cloudRevision,clientMutationId:cloudMutationId})});
     const result = await r.json();
     if (!r.ok) { if (r.status === 409) cloudLastError = 'Cloud data changed in another session. Local edits are preserved on this device; export them before resolving the conflict.'; else if (r.status === 402 && result.code === 'LICENSE_EXPIRED') { if(typeof licenseInfo!=='undefined')licenseInfo={...(licenseInfo||{}),state:'expired',message:result.error}; cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; nav(current); showCloudSyncStatus(); } else if (r.status === 403 && result.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me = null; loginScreen(); showCloudSyncStatus(); } else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; if (r.status===409) showCloudSyncStatus(); return; }
@@ -82,8 +83,9 @@ async function syncCloud() {
 }
 window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); });
 async function refreshCloudThenSync() {
-  if (!LIVE_WEB || !me || cloudSyncBusy || !navigator.onLine) return;
-  try {
+  if (!LIVE_WEB || !me || !navigator.onLine) return;
+  if (cloudRefreshPromise) return cloudRefreshPromise;
+  cloudRefreshPromise = (async () => { try {
     const r = await fetch('/api/data',{credentials:'same-origin'}), response=await r.json();
     if (r.status === 401) { me=null; loginScreen(); return; }
     if (r.status === 403 && response.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me=null; loginScreen(); showCloudSyncStatus(); return; }
@@ -95,8 +97,12 @@ async function refreshCloudThenSync() {
       db=response.data; localStorage.setItem(LS_KEY,JSON.stringify(db));
     }
     if (cloudLastError.startsWith('Cloud data changed')) return;
-    queueCloudSync();
+    if (cloudMutationId) queueCloudSync();
+    cloudLastError = '';
   } catch (_) { cloudLastError='Offline changes remain saved on this device and will sync when reconnected.'; }
+  finally { cloudRefreshPromise = null; }
+  })();
+  return cloudRefreshPromise;
 }
 function showCloudSyncStatus() { if (typeof toast === 'function' && cloudLastError) toast(cloudLastError,'err'); }
 async function loadDB() {

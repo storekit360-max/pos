@@ -114,6 +114,14 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
 }
 
 let liveSetupRequired = null, liveRegistrationOpen = false;
+function showProcessing(title, message) {
+  let el = document.getElementById('authProcessing');
+  if (!el) { el = document.createElement('div'); el.id = 'authProcessing'; el.className = 'auth-processing'; el.setAttribute('role','status'); el.setAttribute('aria-live','polite'); document.body.append(el); }
+  el.innerHTML = `<div class="auth-processing-card"><span class="auth-spinner" aria-hidden="true"></span><h2>${esc(title)}</h2><p>${esc(message)}</p><small>Please keep this page open.</small></div>`;
+  el.hidden = false;
+}
+function hideProcessing() { const el = document.getElementById('authProcessing'); if (el) el.hidden = true; }
+const isTenantHost = () => location.hostname.split('.').length > 2 && !location.hostname.endsWith('.vercel.app');
 
 async function liveSignIn(username, password) {
   const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
@@ -141,7 +149,7 @@ function liveAuthScreen(view, opts = {}) {
   const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : (licenseInfo?.state === 'suspended' || licenseInfo?.state === 'cancelled' || licenseInfo?.state === 'deleted') ? `<p class="mut" role="alert" style="font-size:13px">${esc(licenseInfo.message || 'This shop account is suspended. Contact support.')}</p>` : '';
   let panel;
   if (!isSetup && !isRegister) {
-    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : liveRegistrationOpen ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">New to this shop? <a href="#" data-view="register">Create an account</a></p>' : ''}`;
+    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : liveRegistrationOpen && !isTenantHost() ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">New to this shop? <a href="#" data-view="register">Create an account</a></p>' : ''}`;
   } else if (isRegister) {
     panel = `<form id="liveRegister" class="fg"><p class="mut full" style="margin:0;font-size:13px;text-align:center">Create a separate POS shop. Your data and users will be isolated from every other shop.</p><label class="f full"><span>Business name *</span><input name="business" autocomplete="organization" required></label><div class="f full"><span>Your POS address</span><div style="display:flex;align-items:center;gap:0;border:1px solid var(--line,#ddd);border-radius:8px;overflow:hidden"><input name="slug" aria-label="Your POS address" autocomplete="off" required minlength="2" maxlength="49" pattern="[a-z0-9][a-z0-9-]{1,48}" style="min-width:0;flex:1;border:0;border-radius:0"><span id="tenantDomain" style="padding:10px 12px;background:var(--bg2,#f4f4f4);white-space:nowrap">Loading domain…</span></div><small id="slugAvailability" class="mut">Your POS address will be based on your business name.</small></div><label class="f full"><span>Owner name *</span><input name="name" autocomplete="name" required></label><label class="f full"><span>Owner username *</span><input name="username" autocomplete="username" required minlength="3"></label><label class="f"><span>Password * <small>(at least 10 characters)</small></span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Repeat password *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create shop</button></form>`;
   } else if (liveSetupRequired === false) {
@@ -158,7 +166,8 @@ function liveAuthScreen(view, opts = {}) {
 <details class="full"><summary class="mut" style="cursor:pointer;font-size:13px">More shop details (optional)</summary><div class="fg" style="margin-top:8px">${[['phone', 'Phone', s.phone], ['currency', 'Currency symbol', s.currency], ['address', 'Address', s.address]].map(([k, l, v]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"></label>`).join('')}</div></details>
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${liveSetupRequired ? tab('setup', 'Create shop') : liveRegistrationOpen ? tab('register', 'Create account') : ''}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+  const tenantHost = isTenantHost();
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(tenantHost ? 'MacBook' : s.business)}</h2><p class="mut">${esc(tenantHost ? 'Point of Sale' : (s.tagline || ''))}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${liveSetupRequired ? tab('setup', 'Create shop') : liveRegistrationOpen && !tenantHost ? tab('register', 'Create account') : ''}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
 
   document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
   const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
@@ -167,9 +176,9 @@ function liveAuthScreen(view, opts = {}) {
   if (!isSetup && !isRegister) {
     if (opts.username) { $('#lu').value = opts.username; $('#lp').focus(); } else $('#lu').focus();
     $('#lf').onsubmit = async e => { e.preventDefault();
-      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; showProcessing('Signing you in…','Connecting to your shop and loading its latest data.');
       try { await liveSignIn($('#lu').value.trim().toLowerCase(), $('#lp').value); }
-      catch (err) { toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
+      catch (err) { hideProcessing(); toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
     };
   } else if (isRegister && $('#liveRegister')) {
     const f=$('#liveRegister').elements, availability=$('#slugAvailability'), slugInput=f.namedItem('slug');
@@ -182,7 +191,7 @@ function liveAuthScreen(view, opts = {}) {
     f.business.addEventListener('input',()=>{if(!manuallyEdited){slugInput.value=slugify(f.business.value);scheduleCheck();}});
     slugInput.addEventListener('input',()=>{manuallyEdited=true;slugInput.value=slugify(slugInput.value);scheduleCheck();});
     f.business.focus();
-    $('#liveRegister').onsubmit = async e => { e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); if(f.password.value!==f.password2.value)return toast('Passwords do not match','err'); const un=f.username.value.trim().toLowerCase(),slug=slugInput.value.trim().toLowerCase(); if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return toast('Enter a valid POS address with at least 2 letters, numbers, or dashes','err'); if(!/^[a-z0-9._-]{3,40}$/.test(un))return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore','err');btn.disabled=true; try {if(lastSlug!==slug||!checkedAvailable){await checkSlug();if(lastSlug!==slug||!checkedAvailable)throw Error(availability.textContent||'This shop address is unavailable.');}const r=await fetch('/api/auth?mode=register',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({business:f.business.value.trim(),slug,name:f.name.value.trim(),username:un,password:f.password.value})}); const d=await readApiResponse(r,'Shop creation failed'); if(!d.tenantUrl)throw Error('Shop created, but the POS address is not configured. Contact the administrator.'); location.assign(d.tenantUrl); } catch(err) { toast(err.message||'Shop creation failed','err'); btn.disabled=false; } };
+    $('#liveRegister').onsubmit = async e => { e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); if(f.password.value!==f.password2.value)return toast('Passwords do not match','err'); const un=f.username.value.trim().toLowerCase(),slug=slugInput.value.trim().toLowerCase(); if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return toast('Enter a valid POS address with at least 2 letters, numbers, or dashes','err'); if(!/^[a-z0-9._-]{3,40}$/.test(un))return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore','err');btn.disabled=true; showProcessing('Creating your POS…','Setting up your shop, owner account, cloud data, and web address. This can take a little while.'); try {if(lastSlug!==slug||!checkedAvailable){await checkSlug();if(lastSlug!==slug||!checkedAvailable)throw Error(availability.textContent||'This shop address is unavailable.');}const r=await fetch('/api/auth?mode=register',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({business:f.business.value.trim(),slug,name:f.name.value.trim(),username:un,password:f.password.value})}); const d=await readApiResponse(r,'Shop creation failed'); if(!d.tenantUrl)throw Error('Shop created, but the POS address is not configured. Contact the administrator.'); showProcessing('POS created','Your shop is ready. Opening its address…'); location.assign(d.tenantUrl); } catch(err) { hideProcessing(); toast(err.message||'Shop creation failed','err'); btn.disabled=false; } };
   } else if ($('#liveSetup')) {
     $('#liveSetup').elements.business.focus();
     $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f = e.target.elements, btn = e.target.querySelector('button[type=submit]');
@@ -190,14 +199,14 @@ function liveAuthScreen(view, opts = {}) {
       const un = f.username.value.trim().toLowerCase();
       if (!/^[a-z0-9._-]{3,40}$/.test(un)) return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore', 'err');
       const body = { business: f.business.value.trim(), phone: f.phone.value.trim(), address: f.address.value.trim(), currency: f.currency.value.trim(), name: f.name.value.trim(), username: un, password: f.password.value };
-      btn.disabled = true;
+      btn.disabled = true; showProcessing('Creating your account…','Saving your owner account and preparing the shop.');
       try {
         const r = await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
         await readApiResponse(r, 'Setup failed');
-        liveSetupRequired = false; toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
+        hideProcessing(); liveSetupRequired = false; toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
       } catch (err) {
         if (/already complete/i.test(err.message || '')) { liveSetupRequired = false; toast('This shop is already set up. Please sign in.'); liveAuthScreen('login', { animate: true }); return; }
-        toast(err.message || 'Setup failed', 'err'); btn.disabled = false;
+        hideProcessing(); toast(err.message || 'Setup failed', 'err'); btn.disabled = false;
       }
     };
   }
