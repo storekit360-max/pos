@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
+<meta name="robots" content="noindex,nofollow">
+<title>Smart POS Control Panel</title>
+<link rel="stylesheet" href="sa.css">
+<script src="sa.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+<header><a class="brand" href="#/dashboard">Smart POS <span>Control</span></a><button id="menu" aria-label="Toggle navigation">Menu</button><button id="logout" hidden>Sign out</button></header>
+<div id="notice" role="status" aria-live="polite"></div>
+<div class="layout"><nav id="nav" aria-label="Super admin navigation" hidden>
+<a href="#/dashboard">Dashboard</a><a href="#/tenants">Tenants</a><a href="#/plans">Plans</a><a href="#/licenses">Licenses</a><a href="#/payments">Payments</a><a href="#/announcements">Announcements</a><a href="#/backups">Backups</a><a href="#/audit">Audit log</a><a href="#/releases">Releases &amp; health</a><a href="#/settings">Settings</a>
+</nav><main id="main"><p>Loading control panel…</p></main></div>
+<div id="modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="dialog"><h2 id="modal-title"></h2><div id="modal-body"></div><div id="modal-actions"></div></div></div>
+</div>
+</body>
+</html>

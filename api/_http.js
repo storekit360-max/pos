@@ -17,7 +17,7 @@ function session(req) {
   if (supplied.length!==expected.length || !crypto.timingSafeEqual(supplied,expected)) return null;
   try { const s = JSON.parse(Buffer.from(payload, 'base64url').toString()); return s.exp > Date.now() ? s : null; } catch { return null; }
 }
-function setSession(res, userId) { const p = Buffer.from(JSON.stringify({ userId, exp: Date.now() + 8 * 60 * 60 * 1000 })).toString('base64url'); res.setHeader('Set-Cookie', `${COOKIE}=${p}.${sign(p)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`); }
+function setSession(res, userId, tenantId = 'main', sessionVersion = 0) { const p = Buffer.from(JSON.stringify({ userId, tenantId, sessionVersion, exp: Date.now() + 8 * 60 * 60 * 1000 })).toString('base64url'); res.setHeader('Set-Cookie', `${COOKIE}=${p}.${sign(p)}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`); }
 function clearSession(res) { res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`); }
 function sameOrigin(req) { if (!req.headers.origin) return true; try { return new URL(req.headers.origin).host === req.headers.host; } catch { return false; } }
 function authorized(req, res) { if (!sameOrigin(req)) { json(res,403,{ error:'Cross-origin request rejected' }); return null; } const s = session(req); if (!s) json(res,401,{ error:'Please sign in again' }); return s; }

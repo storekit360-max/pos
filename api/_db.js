@@ -72,12 +72,23 @@ function connect(uri) {
 
 async function ensureIndexes(database) {
   if (!indexesPromise) {
-    indexesPromise = database.collection('users')
-      .createIndex({ username: 1 }, { unique: true })
-      .catch((cause) => {
-        indexesPromise = null;
-        console.error('POS index setup failed:', cause.message);
-      });
+    indexesPromise = (async () => {
+      await database.collection('users').createIndex({ username: 1 }, { unique: true });
+      const optional = [
+        ['users', { tenantId: 1, active: 1 }], ['users', { id: 1, tenantId: 1 }],
+        ['tenants', { slug: 1 }, { unique: true }], ['superadmins', { email: 1 }, { unique: true }],
+        ['superadmin_sessions', { tokenHash: 1 }, { unique: true }], ['superadmin_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+        ['audit_logs', { ts: -1 }], ['payments', { tenantId: 1, createdAt: -1 }], ['announcements', { active: 1, startsAt: 1, endsAt: 1 }],
+        ['licenseKeys', { keyHash: 1 }, { unique: true }], ['tenant_backups', { tenantId: 1, createdAt: -1 }]
+      ];
+      await Promise.all(optional.map(async ([name, keys, options]) => {
+        try { await database.collection(name).createIndex(keys, options || {}); }
+        catch (cause) { console.error(`Optional ${name} index setup failed:`, cause.message); }
+      }));
+    })().catch((cause) => {
+      indexesPromise = null;
+      console.error('POS index setup failed:', cause.message);
+    });
   }
   await indexesPromise;
 }

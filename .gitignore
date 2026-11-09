@@ -24,5 +24,7 @@ The-Smart-POS-Client-*.zip
 /public/updates/*.exe
 /public/updates/*.dmg
 /public/updates/*.zip
+/public/*
+!/public/updates/
 .vercel
 .env*

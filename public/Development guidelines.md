@@ -350,3 +350,7 @@ if (d) {
 - There is no server-side database or sync. Each PC's data is separate; features can't assume shared data.
 - Update integrity relies on HTTPS plus SHA-256 from your own server. Whoever can deploy to Vercel or the installers repo can update every shop — protect those accounts with 2-step login. Code signing (Windows certificate, Apple Developer ID) is the next security step if you want removal of the OS warnings.
 - Screens and shell versions are tied: a PC always runs either the screens from its installer or a live bundle made for its exact shell version.
+
+## 13. Super admin releases
+
+The super admin service is a server/static-site feature, not a desktop shell feature. Keep its UI in the top-level `superadmin/` directory, never in `renderer/`. Vercel copies it to `public/superadmin/` during the build. The desktop UI manifest builder hashes only `renderer/`, so server-only panel updates do not alter `ui.revision`. Preserve the configured `npm install --omit=dev` command and the 12-function Hobby limit by routing panel APIs through the single `api/superadmin.js` function. Take an Atlas snapshot before the first multi-tenant deployment or any tenant restore. Do not add the panel to Electron `build.files`, change `main.js` or bump the app version for server-only releases.

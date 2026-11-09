@@ -29,6 +29,9 @@ const allowed = n => n[3] === 'all' || (n[3] === 'mgr' && ['manager', 'owner'].i
 function nav(name) {
   const n = NAV.find(x => x[0] === name); if (!n || !allowed(n)) name = 'pos';
   current = name; document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.id === name));
+  if (LIVE_WEB && licenseInfo?.state === 'expired') {
+    const view=$('#view');if(view){view.replaceChildren();const card=document.createElement('section'),title=document.createElement('h2'),message=document.createElement('p'),exportButton=document.createElement('button');card.className='card';title.textContent='Subscription expired — read-only access';message.textContent=licenseInfo.message||'Shop data is available for export. Contact support to renew access.';exportButton.type='button';exportButton.className='btn btn-p';exportButton.textContent='Export my data';exportButton.addEventListener('click',()=>A.exportAll?.());card.append(title,message,exportButton);view.append(card);}return;
+  }
   Promise.resolve(P[name]()).catch(e => { console.error(e); $('#view').innerHTML = `<div class="card">Error: ${esc(e.message)}</div>`; });
 }
 A.nav = id => nav(id);
@@ -39,11 +42,18 @@ function shell() {
   $('#app').innerHTML = `<div class="shell"><aside class="side"><div class="brand"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><div><b>${esc(S().business)}</b><small>${esc(S().tagline || '')}</small></div></div>
 <nav class="nav">${NAV.filter(allowed).map(n => `<a data-act="nav" data-id="${n[0]}"><span>${n[2]}</span> <span>${n[1]}</span></a>`).join('')}</nav>
 <div class="me"><b>${esc(me.name)}</b> (${me.role})<br><button class="btn btn-s" data-act="attendanceSelf" ${attendanceSelfAction() === 'Attendance recorded' ? 'disabled' : ''}>${attendanceSelfAction()}</button><br><a style="cursor:pointer;color:var(--acc)" data-act="logout">Log out</a><br><small style="display:block;margin-top:10px;color:#8b93a3">Developed by ZenStack360</small></div></aside>
-<div class="main"><div class="top"><button class="btn btn-p" data-act="nav" data-id="pos">🛒 New Sale</button><input id="gs" placeholder="Global search: product, IMEI, invoice… (Ctrl+K)" style="width:340px" data-in="gsearch"><span class="sp"></span><span class="clock" id="clock"></span><button class="btn btn-s" data-act="lock">🔒 Lock</button></div><div class="view" id="view"></div></div></div>`;
+<div class="main"><div id="licenseNotice"></div><div id="announcementNotices"></div><div class="top"><button class="btn btn-p" data-act="nav" data-id="pos">🛒 New Sale</button><input id="gs" placeholder="Global search: product, IMEI, invoice… (Ctrl+K)" style="width:340px" data-in="gsearch"><span class="sp"></span><span class="clock" id="clock"></span><button class="btn btn-s" data-act="lock">🔒 Lock</button></div><div class="view" id="view"></div></div></div>`;
+  renderLiveNotices();
   const tick = () => { const c = $('#clock'); if (c) c.textContent = new Date().toLocaleString(); }; tick(); setInterval(tick, 30000);
   nav(me.role === 'cashier' ? 'pos' : 'dashboard');
   if (S().customerDisplay && window.posApi) window.posApi.openCustomerDisplay();
   syncBranding();
+}
+
+function renderLiveNotices() {
+  if (!LIVE_WEB) return;
+  const target=$('#licenseNotice');if(target){target.replaceChildren();if(licenseInfo?.state==='grace'||licenseInfo?.state==='expired'){const p=document.createElement('p');p.className='card';p.setAttribute('role',licenseInfo.state==='expired'?'alert':'status');p.textContent=licenseInfo.message|| (licenseInfo.state==='expired'?'Subscription expired. Data is read-only; export it and contact support to renew.':`Subscription grace period: ${licenseInfo.daysLeft||0} days left.`);target.append(p);}}
+  const area=$('#announcementNotices');if(!area)return;area.replaceChildren();for(const a of licenseInfo?.announcements||[]){const key=`smartpos-announcement:${a.title}:${a.startsAt}`;if(sessionStorage.getItem(key))continue;const p=document.createElement('p'),text=document.createElement('span'),b=document.createElement('button');p.className='card';p.setAttribute('role','status');text.textContent=`${a.title}: ${a.body} `;b.type='button';b.className='btn btn-s';b.textContent='Dismiss';b.setAttribute('aria-label',`Dismiss announcement ${a.title}`);b.addEventListener('click',()=>{sessionStorage.setItem(key,'1');p.remove();});p.append(text,b);area.append(p);}
 }
 
 function syncBranding() {
@@ -74,7 +84,7 @@ function loginScreen() {
     if (LIVE_WEB) {
       try {
         const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:$('#lu').value.trim().toLowerCase(),password:$('#lp').value})});
-        const result = await readApiResponse(r, 'Sign-in failed');
+        const result = await readApiResponse(r, 'Sign-in failed'); licenseInfo=result.license||null;
         const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
         cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters); localStorage.setItem(LS_KEY,JSON.stringify(db));
         me=result.user; log('login',me.username); await flush(); shell(); return;
@@ -109,13 +119,13 @@ async function liveSignIn(username, password) {
   cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data;
   const df = defaults(); db.settings = Object.assign(df.settings, db.settings); for (const k in df) if (!(k in db)) db[k] = df[k]; db.counters = Object.assign(df.counters, db.counters);
   localStorage.setItem(LS_KEY, JSON.stringify(db));
-  me = result.user; log('login', me.username); await flush(); shell();
+  me = result.user; licenseInfo=result.license||null; log('login', me.username); await flush(); shell();
 }
 
 function liveAuthScreen(view, opts = {}) {
   const s = S(), isSetup = view === 'setup';
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
-  const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : '';
+  const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : (licenseInfo?.state === 'suspended' || licenseInfo?.state === 'cancelled' || licenseInfo?.state === 'deleted') ? `<p class="mut" role="alert" style="font-size:13px">${esc(licenseInfo.message || 'This shop account is suspended. Contact support.')}</p>` : '';
   let panel;
   if (!isSetup) {
     panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : ''}`;
@@ -190,16 +200,16 @@ document.addEventListener('keydown', e => {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
-    liveSetupRequired = !!setup.setupRequired;
+    liveSetupRequired = !!setup.setupRequired; licenseInfo=setup.license||null;
     if (setup.setupRequired) { liveSetupScreen(); window.updateUi?.start(); return; }
-    const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await readApiResponse(auth, 'Could not check sign-in status');
+    const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await readApiResponse(auth, 'Could not check sign-in status'); if(signed.license)licenseInfo=signed.license;
     if (signed.authenticated) {
       const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters);
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();}
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
-      me=signed.user; shell(); if(cloudMutationId)queueCloudSync();
+      me=signed.user; licenseInfo=signed.license||null; shell(); if(cloudMutationId)queueCloudSync();
     } else { db = defaults(); loginScreen(); }
     window.updateUi?.start(); return;
   }
