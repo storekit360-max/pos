@@ -78,7 +78,7 @@ async function ensureIndexes(database) {
         ['users', { tenantId: 1, active: 1 }], ['users', { id: 1, tenantId: 1 }],
         ['tenants', { slug: 1 }, { unique: true }], ['superadmins', { email: 1 }, { unique: true }],
         ['superadmin_sessions', { tokenHash: 1 }, { unique: true }], ['superadmin_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
-        ['audit_logs', { ts: -1 }], ['payments', { tenantId: 1, createdAt: -1 }], ['announcements', { active: 1, startsAt: 1, endsAt: 1 }],
+        ['audit_logs', { ts: -1 }], ['rate_limits', { expiresAt: 1 }, { expireAfterSeconds: 0 }], ['users', { tenantId: 1, createdAt: -1 }], ['tenants', { status: 1, createdAt: -1 }], ['users', { id: 1 }], ['payments', { tenantId: 1, createdAt: -1 }], ['announcements', { active: 1, startsAt: 1, endsAt: 1 }],
         ['licenseKeys', { keyHash: 1 }, { unique: true }], ['tenant_backups', { tenantId: 1, createdAt: -1 }]
       ];
       await Promise.all(optional.map(async ([name, keys, options]) => {
