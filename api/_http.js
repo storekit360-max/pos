@@ -1,7 +1,12 @@
 'use strict';
 const crypto = require('node:crypto');
 const COOKIE = 'smartpos_live';
-const json = (res, status, body, headers = {}) => { res.status(status).set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...headers }).json(body); };
+const json = (res, status, body, headers = {}) => {
+  const merged = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Type': 'application/json; charset=utf-8', ...headers };
+  for (const [name, value] of Object.entries(merged)) res.setHeader(name, value);
+  res.statusCode = status;
+  res.end(JSON.stringify(body));
+};
 const key = () => { if (!process.env.POS_SESSION_SECRET || process.env.POS_SESSION_SECRET.length < 32) throw new Error('POS_SESSION_SECRET is not configured'); return process.env.POS_SESSION_SECRET; };
 function sign(value) { return crypto.createHmac('sha256', key()).update(value).digest('base64url'); }
 function cookie(req) { const item = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(COOKIE + '=')); return item ? decodeURIComponent(item.slice(COOKIE.length + 1)) : ''; }
