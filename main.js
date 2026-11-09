@@ -273,7 +273,12 @@ function licenseStatus() {
       if (typeof encoded !== 'string' || typeof signature !== 'string' || !crypto.verify(null, Buffer.from(encoded), desktopLicensePublicKey, Buffer.from(signature, 'base64url'))) return { initialized: true, active: false, type: 'invalid' };
       const entitlement = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
       const type = desktopLicenseType(entitlement.kind);
-      if (entitlement.v !== 1 || !type || (entitlement.expiresAt && now >= entitlement.expiresAt)) return { initialized: true, active: false, type: type || 'invalid', expiresAt: entitlement.expiresAt || undefined };
+      const timed = type === 'temporary' || type === 'monthly';
+      const duration = type === 'temporary' ? 7 * 86400000 : type === 'monthly' ? 30 * 86400000 : null;
+      const expiryMatchesKind = timed
+        ? Number.isFinite(entitlement.issuedAt) && Number.isFinite(entitlement.expiresAt) && entitlement.expiresAt === entitlement.issuedAt + duration
+        : type === 'permanent' && entitlement.expiresAt === null;
+      if (entitlement.v !== 1 || !type || !expiryMatchesKind || (entitlement.expiresAt && now >= entitlement.expiresAt)) return { initialized: true, active: false, type: type || 'invalid', expiresAt: entitlement.expiresAt || undefined };
       return { initialized: true, active: true, type, expiresAt: entitlement.expiresAt || undefined };
     } catch (_) { return { initialized: true, active: false, type: 'invalid' }; }
   }
