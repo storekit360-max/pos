@@ -114,6 +114,7 @@ async function liveSignIn(username, password) {
 
 function liveAuthScreen(view, opts = {}) {
   const s = S(), isSetup = view === 'setup';
+  const linkSecret = (new URLSearchParams(location.hash.replace(/^#/, '')).get('setup') || '').trim();
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
   const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : '';
   let panel;
@@ -123,10 +124,12 @@ function liveAuthScreen(view, opts = {}) {
     panel = `<div style="text-align:center;padding:8px 0"><p>The owner account for this shop is already created.</p><p class="mut" style="font-size:13px">Sign in with it. The owner adds staff accounts from inside the app.</p><button type="button" class="btn btn-p btn-lg" data-view="login">Go to sign in</button></div>`;
   } else {
     panel = `<form id="liveSetup" class="fg">
-<label class="f full"><span>Setup secret *</span><input name="secret" type="password" autocomplete="off" required></label>
-${[['business', 'Business name *', s.business, true], ['phone', 'Phone', s.phone, false], ['address', 'Address', s.address, false], ['currency', 'Currency symbol', s.currency, false]].map(([k, l, v, req]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"${req ? ' required' : ''}></label>`).join('')}
-<label class="f"><span>Owner name *</span><input name="name" required></label><label class="f"><span>Owner username *</span><input name="username" autocomplete="username" required minlength="3"></label>
-<label class="f"><span>Password * (min 10)</span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Repeat password *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label>
+<p class="mut full" style="margin:0;font-size:13px;text-align:center">Create the owner account for your shop. You only do this once.</p>
+${linkSecret ? '' : '<label class="f full"><span>Setup code * <small>(given to you by the person who installed this POS)</small></span><input name="secret" type="password" autocomplete="off" required></label>'}
+<label class="f full"><span>Shop name *</span><input name="business" value="${esc(s.business)}" required></label>
+<label class="f"><span>Your name *</span><input name="name" autocomplete="name" required></label><label class="f"><span>Choose a username *</span><input name="username" autocomplete="username" required minlength="3"></label>
+<label class="f"><span>Choose a password * <small>(at least 10 characters)</small></span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Type the password again *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label>
+<details class="full"><summary class="mut" style="cursor:pointer;font-size:13px">More shop details (optional)</summary><div class="fg" style="margin-top:8px">${[['phone', 'Phone', s.phone], ['currency', 'Currency symbol', s.currency], ['address', 'Address', s.address]].map(([k, l, v]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"></label>`).join('')}</div></details>
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
   $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('setup', 'Create account')}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
@@ -143,20 +146,20 @@ ${[['business', 'Business name *', s.business, true], ['phone', 'Phone', s.phone
       catch (err) { toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
     };
   } else if ($('#liveSetup')) {
-    $('#liveSetup').elements.secret.focus();
+    ($('#liveSetup').elements.secret || $('#liveSetup').elements.name).focus();
     $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f = e.target.elements, btn = e.target.querySelector('button[type=submit]');
       if (f.password.value !== f.password2.value) return toast('Passwords do not match', 'err');
       const un = f.username.value.trim().toLowerCase();
       if (!/^[a-z0-9._-]{3,40}$/.test(un)) return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore', 'err');
-      const body = { setupSecret: f.secret.value, business: f.business.value.trim(), phone: f.phone.value.trim(), address: f.address.value.trim(), currency: f.currency.value.trim(), name: f.name.value.trim(), username: un, password: f.password.value };
+      const body = { setupSecret: linkSecret || f.secret.value, business: f.business.value.trim(), phone: f.phone.value.trim(), address: f.address.value.trim(), currency: f.currency.value.trim(), name: f.name.value.trim(), username: un, password: f.password.value };
       btn.disabled = true;
       try {
         const r = await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)});
         await readApiResponse(r, 'Setup failed');
-        liveSetupRequired = false; toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
+        liveSetupRequired = false; if (linkSecret) history.replaceState(null, '', location.pathname + location.search); toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
       } catch (err) {
         if (/already complete/i.test(err.message || '')) { liveSetupRequired = false; toast('This shop is already set up. Please sign in.'); liveAuthScreen('login', { animate: true }); return; }
-        toast(err.message || 'Setup failed', 'err'); btn.disabled = false;
+        toast(/not authorized/i.test(err.message || '') ? 'That setup code is not correct. Please check it and try again.' : (err.message || 'Setup failed'), 'err'); btn.disabled = false;
       }
     };
   }
