@@ -140,7 +140,117 @@
     endSession('Sign-in cancelled. MFA must be set up before you can use the panel.');
   });
 
-  async function dashboard(){const d=await api('dashboard');heading('Dashboard');const g=el('div',undefined,'grid');for(const [k,v]of Object.entries(d.counts||{})){const c=el('div',undefined,'card metric');c.append(el('small',k),el('b',v));g.append(c);}main.append(g);const stats=card('Usage and revenue');stats.append(el('p',`Revenue this month: LKR ${Number(d.revenueThisMonth||0).toLocaleString()}`),el('p',`Users: ${d.totalUsers||0} · Stored POS data: ${(Number(d.storageBytes||0)/1048576).toFixed(2)} MB`));const recent=card('Recent activity');recent.append(table(['When','Actor','Action','Summary'],d.recentAudit||[],(tr,x)=>[x.ts,x.actorEmail,x.action,x.summary].forEach(v=>tr.append(el('td',v||'')))));}
+  /* ================= Dashboard (live data from the backend) ================= */
+  let dashRun=0;
+  const num=v=>Number(v||0).toLocaleString();
+  const mbText=b=>`${(Number(b||0)/1048576).toFixed(2)} MB`;
+  const fmt=v=>{const d=v?new Date(v):null;return d&&!Number.isNaN(d.getTime())?d.toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):'—';};
+  const fmtDay=v=>{const d=v?new Date(v):null;return d&&!Number.isNaN(d.getTime())?d.toLocaleDateString([],{dateStyle:'medium'}):'—';};
+  const cap=v=>String(v||'').charAt(0).toUpperCase()+String(v||'').slice(1);
+  const expiryOf=t=>t.status==='trial'?(t.trialEndsAt||t.expiresAt):(t.expiresAt||t.trialEndsAt);
+  const pill=status=>el('span',status,`pill pl-${status}`);
+  const openBtn=t=>btn('Open',()=>{location.hash=`#/tenants/${encodeURIComponent(t._id)}`;});
+  const unavailable=(parent,r)=>parent.append(el('p',r.reason?.message||'Not available.','muted'));
+
+  async function dashboard(){
+    const run=++dashRun;
+    heading('Dashboard',btn('Refresh',()=>dashboard()));
+    const status=el('p','Loading dashboard…','muted');main.append(status);
+    const [dR,tR,pR,hR,rR]=await Promise.allSettled([api('dashboard'),api('tenants.list&page=1&limit=50'),api('payments.list&limit=8'),api('health'),api('releases')]);
+    if(run!==dashRun||!admin||!/^(#\/?(dashboard)?)?$/.test(location.hash))return;
+    status.remove();
+    if(dR.status==='rejected'){
+      if(!dR.reason.handled){const c=card('Dashboard could not be loaded');c.append(el('p',dR.reason.message,'error-text'),btn('Try again',()=>dashboard(),'primary'));}
+      return;
+    }
+    const d=dR.value,counts=d.counts||{},tenants=tR.status==='fulfilled'?(tR.value.items||[]):[],names=Object.fromEntries(tenants.map(t=>[t._id,t.name]));
+    main.append(el('p',`Live data · updated ${new Date().toLocaleTimeString()}`,'muted'));
+
+    // KPI cards
+    const kpis=[
+      ['Total shops',num(d.tenantCount),'all states'],
+      ['Active',num(counts.active),'paying / licensed'],
+      ['On trial',num(counts.trial),''],
+      ['Expiring in 7 days',num(d.expiringIn7Days),'renewal needed soon',d.expiringIn7Days>0?'warn':''],
+      ['Expiring in 30 days',num(d.expiringIn30Days),''],
+      ['Grace period',num(counts.grace),'past expiry, still working',counts.grace>0?'warn':''],
+      ['Expired',num(counts.expired),'',counts.expired>0?'bad':''],
+      ['Suspended',num(counts.suspended),''],
+      ['Revenue (LKR) this month',num(d.revenueThisMonth),'recorded payments'],
+      ['New shops this month',num(d.newTenantsThisMonth),''],
+      ['Staff accounts',num(d.totalUsers),'across all shops'],
+      ['Stored POS data',mbText(d.storageBytes),'across all shops']
+    ];
+    const grid=el('div',undefined,'grid kpis');
+    for(const [label,value,hint,tone] of kpis){const c=el('div',undefined,`card metric${tone?' '+tone:''}`);c.append(el('small',label),el('b',value));if(hint)c.append(el('small',hint,'muted'));grid.append(c);}
+    main.append(grid);
+
+    // Status distribution
+    const dist=card('Shops by status'),keys=['active','trial','grace','expired','suspended'],total=keys.reduce((n,k)=>n+(Number(counts[k])||0),0);
+    if(!total)dist.append(el('p','No shops yet. Create the first one from Tenants.','empty'));
+    else{
+      const bar=el('div',undefined,'bar'),legend=el('div',undefined,'legend');
+      bar.setAttribute('role','img');bar.setAttribute('aria-label',keys.map(k=>`${cap(k)} ${counts[k]||0}`).join(', '));
+      for(const k of keys){
+        const n=Number(counts[k])||0;
+        if(n){const seg=el('span',undefined,`st-${k}`);seg.style.width=`${(n/total)*100}%`;seg.title=`${cap(k)}: ${n}`;bar.append(seg);}
+        const lg=el('span',undefined,'lg');lg.append(el('i',undefined,`dot st-${k}`),document.createTextNode(`${cap(k)} ${n}`));legend.append(lg);
+      }
+      dist.append(bar,legend);
+    }
+
+    // Needs attention + recent shops
+    const cols=el('div',undefined,'cols');main.append(cols);
+    const mk=(title)=>{const c=el('section',undefined,'card');c.append(el('h2',title));cols.append(c);return c;};
+    const now=Date.now(),attention=mk('Needs attention');
+    if(tR.status!=='fulfilled')unavailable(attention,tR);
+    else{
+      const rows=tenants.filter(t=>{
+        if(['cancelled','deleted'].includes(t.status))return false;
+        if(['grace','expired','suspended'].includes(t.status))return true;
+        const e=expiryOf(t);return e&&new Date(e).getTime()-now<=14*86400000;
+      }).map(t=>({t,e:expiryOf(t)})).sort((x,y)=>(x.e?new Date(x.e).getTime():0)-(y.e?new Date(y.e).getTime():0)).slice(0,8);
+      if(!rows.length)attention.append(el('p','Nothing needs attention right now.','empty'));
+      else attention.append(table(['Shop','Status','Expires','',''],rows,(tr,{t,e})=>{
+        const days=e?Math.ceil((new Date(e).getTime()-now)/86400000):null,td=el('td');td.append(pill(t.status));
+        tr.append(el('td',t.name),td,el('td',fmtDay(e)),el('td',days===null?'':days<0?`${-days} d overdue`:`${days} d left`));
+        const a=el('td',undefined,'actions');a.append(openBtn(t));tr.append(a);
+      }));
+    }
+    const recent=mk('Newest shops');
+    if(tR.status!=='fulfilled')unavailable(recent,tR);
+    else if(!tenants.length)recent.append(el('p','No shops yet.','empty'));
+    else recent.append(table(['Shop','Status','Plan','Staff','Created',''],tenants.slice(0,5),(tr,t)=>{
+      const td=el('td');td.append(pill(t.status));
+      tr.append(el('td',t.name),td,el('td',t.planSnapshot?.name||'—'),el('td',num(t.userCount)),el('td',fmtDay(t.createdAt)));
+      const a=el('td',undefined,'actions');a.append(openBtn(t));tr.append(a);
+    }));
+
+    // Payments + system
+    const cols2=el('div',undefined,'cols');main.append(cols2);
+    const mk2=(title)=>{const c=el('section',undefined,'card');c.append(el('h2',title));cols2.append(c);return c;};
+    const pay=mk2('Recent payments');
+    if(pR.status!=='fulfilled')unavailable(pay,pR);
+    else if(!(pR.value.items||[]).length)pay.append(el('p','No payments recorded yet.','empty'));
+    else pay.append(table(['Shop','Amount','Method','Recorded',''],pR.value.items,(tr,p)=>{
+      tr.append(el('td',names[p.tenantId]||String(p.tenantId||'').slice(0,8)),el('td',`${p.currency||'LKR'} ${num(p.amount)}`),el('td',p.method||'—'),el('td',fmt(p.createdAt)));
+      tr.append(el('td',p.voidedAt?'Voided':''));
+    }));
+    const sys=mk2('System');
+    if(hR.status==='fulfilled'){
+      const h=hR.value,missing=Object.entries(h.env||{}).filter(([,ok])=>!ok).map(([k])=>k);
+      sys.append(el('p',`MongoDB: ${h.mongo?.ok?'Online':'Unavailable'}${h.mongo?.latencyMs!==undefined?` (${h.mongo.latencyMs} ms)`:''}`),
+        el('p',`Region: ${h.region||'unknown'} · System errors (24 h): ${num(h.recentSystemErrors)}`),
+        el('p',missing.length?`Missing environment variables: ${missing.join(', ')}`:'Required environment variables are set.',missing.length?'error-text':'muted'));
+    }else if(hR.reason?.code!=='FORBIDDEN')unavailable(sys,hR);
+    if(rR.status==='fulfilled')sys.append(el('p',`Installer version: ${rR.value.version||'unavailable'} · UI revision: ${rR.value.ui?.revision||'unavailable'}`));
+    if(!sys.querySelector('p'))sys.append(el('p','System details are not available for your role.','muted'));
+
+    // Activity
+    const act=card('Recent activity');
+    if(!(d.recentAudit||[]).length)act.append(el('p','No activity recorded yet.','empty'));
+    else act.append(table(['When','Actor','Action','Summary'],d.recentAudit,(tr,x)=>[fmt(x.ts),x.actorEmail,x.action,x.summary].forEach(v=>tr.append(el('td',v||'')))));
+  }
   async function tenants(){heading('Tenants',btn('Create tenant',createTenant,'primary'));const filters=row(),q=field('Search','search','','search');q.control.placeholder='Name, slug or email';const state=field('State','select');['','trial','active','grace','expired','suspended','cancelled','deleted'].forEach(v=>{const o=el('option',v||'All states');o.value=v;state.control.append(o);});filters.append(q,state);let timer;const list=async()=>{try{const d=await api(`tenants.list&page=${page}&limit=25&search=${encodeURIComponent(q.control.value)}&state=${state.control.value}`);const c=card('Shop accounts');if(!d.items?.length){c.append(el('p','No tenants match this search.','empty'));return;}c.append(table(['Shop','State','Plan','Staff','Data','Expiry',''],d.items,(tr,t)=>{tr.append(el('td',t.name),el('td',t.status),el('td',t.planSnapshot?.name||''),el('td',t.userCount),el('td',`${(t.dataBytes/1048576).toFixed(2)} MB`),el('td',t.expiresAt||t.trialEndsAt||'—'));const td=el('td',undefined,'actions');td.append(btn('Open',()=>{location.hash=`#/tenants/${encodeURIComponent(t._id)}`;}));tr.append(td);}));const p=el('p',`Page ${d.page} · ${d.total} tenants`);p.append(btn('Previous',()=>{page=Math.max(1,page-1);tenants();}),btn('Next',()=>{page=Math.min(Math.ceil(d.total/25),page+1);tenants();}));c.append(p);}catch(e){toast(e.message,true);}};q.control.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{page=1;tenants();},250);});state.control.addEventListener('change',()=>{page=1;tenants();});await list();}
   function createTenant(){const box=el('div'),fields={};[['Shop name','name'],['Slug','slug'],['Owner name','ownerName'],['Username','username'],['Email','email'],['Phone','phone'],['Trial days','trialDays']].forEach(([l,n])=>{fields[n]=field(l,n==='trialDays'?'number':'text',n==='trialDays'?'14':'',n);box.append(fields[n]);});modalShow('Create tenant with owner',box,[btn('Create',async()=>{const b={};for(const[k,v]of Object.entries(fields))b[k]=v.control.value;try{const d=await api('tenants.create',b);modal.hidden=true;secret(`Temporary password for ${d.owner.username}`,d.temporaryPassword);tenantName=d.tenant.name;}catch(e){toast(e.message,true);}},'primary'),btn('Cancel',()=>modal.hidden=true)]);}
   async function downloadTenant(id){const d=await api(`backups.export&tenantId=${encodeURIComponent(id)}`),blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),a=el('a');a.href=URL.createObjectURL(blob);a.download=`tenant-${id}-backup.json`;a.click();URL.revokeObjectURL(a.href);toast('Tenant data exported.');}
