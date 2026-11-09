@@ -1,5 +1,68 @@
 {
   "version": "1.2.0",
   "notes": "VAT and related POS updates. Download is available after the matching platform installer is published.",
-  "platforms": {}
+  "platforms": {},
+  "ui": {
+    "revision": "5b960e0236cd",
+    "minShell": "1.4.0",
+    "notes": "Improvements and fixes.",
+    "builtAt": "2026-11-09T02:30:01.945Z",
+    "files": [
+      {
+        "path": "customer-display.html",
+        "sha256": "571a9cf1bc7790174ba47b344e794e90cbbf8929e38deaf719cb2a0b44332b92",
+        "size": 7770
+      },
+      {
+        "path": "index.html",
+        "sha256": "3ffad5bd24058954d4539bfb861856606652389d37e34d37f4c96191cdcea18f",
+        "size": 706
+      },
+      {
+        "path": "js/app.js",
+        "sha256": "d8b59cb82210aa4cc734ba63b323b5ced1cf0d6386ba8dab47dd32e8d04ed4f2",
+        "size": 16085
+      },
+      {
+        "path": "js/core.js",
+        "sha256": "292f41abc0b504e46fc6dd385e2ca7065f8cb500da30511ee521f1e96d96ea84",
+        "size": 26243
+      },
+      {
+        "path": "js/diagnostics.js",
+        "sha256": "ffe468f8a74bea7d705c241ec88fb6fde119bd2ec7281bfb88a85daf10280740",
+        "size": 1491
+      },
+      {
+        "path": "js/pages.js",
+        "sha256": "a730ff4140bd9de39e15df33fe06be3a48db5995f1d28086a46db8663e20b777",
+        "size": 54484
+      },
+      {
+        "path": "js/pages2.js",
+        "sha256": "d9e7fe91439497b45ea9700020a0954b7ccd04e9483b1245491d82abc74b9b2c",
+        "size": 115995
+      },
+      {
+        "path": "js/qfonts.js",
+        "sha256": "d34cad82c0ce78cdbf7e3cf89db254f14e5ae8cacb37c66732229a040fc162b2",
+        "size": 113126
+      },
+      {
+        "path": "js/updater-ui.js",
+        "sha256": "a2ec03d4cfcef00965198805c91e9a1bfbd86c8fd592b33e6c617dc4f2e65dd6",
+        "size": 8890
+      },
+      {
+        "path": "lib/html2pdf.bundle.min.js",
+        "sha256": "9563c45f032179c73454293a649929e60fc24c05a326e8ab2811cfa8f25c3607",
+        "size": 946030
+      },
+      {
+        "path": "style.css",
+        "sha256": "e3724e9e28b725e598ceb8bfdec8fcca6b20f4acdbf79e03e12cdb28c023a0d4",
+        "size": 13897
+      }
+    ]
+  }
 }

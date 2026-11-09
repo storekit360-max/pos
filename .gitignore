@@ -6,6 +6,9 @@ client/
 The-Smart-POS-Client/
 The-Smart-POS-Client.zip
 
+# Local Vercel development secrets
+.env.local
+
 # Private license inventory
 /LICENSE-KEYS-PRIVATE.md
 
@@ -21,3 +24,5 @@ The-Smart-POS-Client-*.zip
 /public/updates/*.exe
 /public/updates/*.dmg
 /public/updates/*.zip
+.vercel
+.env*
