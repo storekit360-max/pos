@@ -97,7 +97,7 @@ function loginScreen() {
 
 function setupScreen() {
   const s = S();
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:520px;text-align:left"><div style="text-align:center"><h2 style="margin:4px 0">Welcome – First-time setup</h2><p class="mut">Create an owner account for this browser.</p><p class="mut" style="font-size:13px">To use an account on multiple browsers, set up the deployed HTTPS POS site. This local account will not be shared or copied there.</p></div><form id="sf" class="fg">
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:520px;text-align:left"><div style="text-align:center"><h2 style="margin:4px 0">Welcome – First-time setup</h2><p class="mut">Create an owner account to get started.</p></div><form id="sf" class="fg">
 ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['address', 'Address', s.address], ['currency', 'Currency symbol', s.currency]].map(([k, l, v]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"></label>`).join('')}
 <label class="f"><span>Owner name *</span><input name="name" required></label><label class="f"><span>Owner username *</span><input name="username" required></label>
 <label class="f"><span>Password * (min 8)</span><input name="pw" type="password" required minlength="8"></label><label class="f"><span>Repeat password *</span><input name="pw2" type="password" required></label>
