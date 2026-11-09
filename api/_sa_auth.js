@@ -14,11 +14,13 @@ function decryptTotp(value) { const [i,t,d]=String(value).split('.'), c=crypto.c
 function originOK(req) { try { const origin=new URL(req.headers.origin); return origin.protocol==='https:'&&origin.host===req.headers.host; } catch { return false; } }
 function clientIp(req) { return String(req.headers['x-vercel-forwarded-for']||req.headers['x-real-ip']||req.headers['x-forwarded-for']||'').split(',')[0].trim().toLowerCase().replace(/^::ffff:/,'').slice(0,100); }
 function ipv4ToInt(text) { const p=String(text).split('.'); if(p.length!==4)return null; let n=0; for(const x of p){ if(!/^\d{1,3}$/.test(x)||Number(x)>255)return null; n=n*256+Number(x); } return n; }
-// Fail-closed: with no SUPERADMIN_ALLOWED_IPS the panel and API are unreachable. Use "*" only to opt out deliberately.
+// Optional network allowlist. With SUPERADMIN_ALLOWED_IPS unset/empty (or "*") the panel is reachable from any
+// device/network; access is still protected by password + MFA + CSRF + same-origin + rate limiting.
+// When set, only the listed IPv4/IPv6 addresses or IPv4 CIDR ranges may connect.
 function ipAllowed(req) {
   const entries=String(process.env.SUPERADMIN_ALLOWED_IPS||'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-  if(entries.includes('*'))return true;
-  const ip=clientIp(req); if(!entries.length||!ip)return false;
+  if(!entries.length||entries.includes('*'))return true;
+  const ip=clientIp(req); if(!ip)return false;
   const n=ipv4ToInt(ip);
   return entries.some(entry=>{
     if(entry===ip)return true;
