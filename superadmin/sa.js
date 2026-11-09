@@ -479,7 +479,7 @@
     out.remove();
     if(!d.items.length){inventory.append(el('p','No desktop licenses have been issued.','empty'));return;}
     inventory.append(table(['Type','Key ending','Status','Created','Expires',''],d.items,(tr,item)=>{
-      tr.append(el('td',item.kind==='7'?'7 days':item.kind==='30'?'1 month':'Permanent'),el('td',item.keyHint?`…${item.keyHint}`:'—','mono'),el('td',item.status),el('td',fmt(item.createdAt)),el('td',item.expiresAt?fmt(item.expiresAt):'Never'));
+      tr.append(el('td',['7','temporary'].includes(String(item.kind))?'7 days':['30','monthly'].includes(String(item.kind))?'1 month':'Permanent'),el('td',item.keyHint?`…${item.keyHint}`:'—','mono'),el('td',item.status),el('td',fmt(item.createdAt)),el('td',item.expiresAt?fmt(item.expiresAt):'Never'));
       const actions=el('td',undefined,'actions');
       if(item.status==='active'&&admin?.role!=='readonly')actions.append(btn('Revoke',()=>dialog('Revoke desktop license','The key will be blocked from future activations. An already activated offline copy cannot receive revocation until it connects; timed access ends at its expiry.',[],'Revoke',async()=>{await api('licenses.revokeDesktop',{id:item._id});closeModal();toast('Desktop license revoked');await licensesPage();},true)));
       tr.append(actions);

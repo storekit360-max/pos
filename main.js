@@ -293,16 +293,16 @@ ipcMain.handle('license:start', () => { if (!readLicense()) writeLicense({ start
 ipcMain.handle('license:activate', (_e, raw) => {
   // SP1 signatures and payloads use case-sensitive base64url. Preserve the
   // supplied text for signed keys; legacy TSP keys remain case-insensitive.
-  const suppliedKey = String(raw || '').trim();
+  const suppliedKey = String(raw || '').replace(/\s+/g, '');
   const legacyKey = suppliedKey.toUpperCase();
   const type = legacyLicenseKeys[crypto.createHash('sha256').update(legacyKey).digest('hex')];
   const l = readLicense() || { startedAt: Date.now() };
   if (!type) {
     const parts = suppliedKey.split('.');
-    if (parts.length !== 3 || parts[0] !== 'SP1') return { ok: false, error: 'Invalid license key' };
+    if (parts.length !== 3 || parts[0] !== 'SP1') return { ok: false, error: 'Invalid license key format. Paste the whole key without spaces or line breaks.' };
     try {
       const [, encoded, signature] = parts;
-      if (!crypto.verify(null, Buffer.from(encoded), desktopLicensePublicKey, Buffer.from(signature, 'base64url'))) return { ok: false, error: 'Invalid license key' };
+      if (!crypto.verify(null, Buffer.from(encoded), desktopLicensePublicKey, Buffer.from(signature, 'base64url'))) return { ok: false, error: 'License signature does not match this app build. Install the latest desktop build.' };
       const entitlement = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
       const mappedType = desktopLicenseType(entitlement.kind);
       const timed = mappedType === 'temporary' || mappedType === 'monthly';
