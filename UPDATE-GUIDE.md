@@ -15,36 +15,18 @@ The local-only reminder was removed from the renderer login screen. To put this 
 2. Installed clients with the live UI updater can open **Settings & Backup → System update → Check for updates**, then choose **Restart to apply update**. The UI update is downloaded and verified before it is applied.
 3. Older installed clients without live UI updates need a full installer update as described below. Publishing the website alone does not update an installed Electron app.
 
-## Desktop license keys: one-time server setup
+## Desktop license keys: simple setup
 
-The live control panel issues signed desktop keys. The signing private key must stay on the server; the matching public key is embedded in the desktop app so it can validate keys without an internet connection.
+The super admin creates a key; the offline app verifies it locally. Do this setup once:
 
-### 1. Generate an Ed25519 key pair
+1. On the trusted release computer, run `npm run license:setup`. This creates the signing key pair. Back up `desktop-license-private.pem` securely and never send it to customers or commit it.
+2. Add only `DESKTOP_LICENSE_PRIVATE_KEY` to Vercel Production, using the complete contents of `desktop-license-private.pem`, then redeploy. The API derives the public key automatically; no public key environment variable is needed.
+3. Build installers as usual with `npm run dist:win` or `npm run dist:mac`. The build automatically synchronizes the desktop app's public key from the private key before packaging. Distribute the new installer to customers.
+4. For routine use, open **Super admin → Desktop licenses**, choose **7-day**, **30-day**, or **permanent**, and generate. Paste the resulting complete `SP1.` key in the desktop app under **Settings & Backup → License**.
 
-On a trusted release machine with OpenSSL, run:
+Keep the same private key for future builds. If it is lost or intentionally replaced, new installers must be built and distributed before issuing keys from the replacement. Previously installed builds trust the old public key and cannot verify keys from a new signing key.
 
-```sh
-openssl genpkey -algorithm Ed25519 -out desktop-license-private.pem
-openssl pkey -in desktop-license-private.pem -pubout -out desktop-license-public.pem
-```
-
-Keep `desktop-license-private.pem` secret. Do not commit either PEM file or send the private key to customers. Back up the private key securely; losing it means issuing a new pair and coordinating a new desktop build.
-
-### 2. Configure the live server signing secret
-
-In Vercel, open the POS project **Settings → Environment Variables** and add `DESKTOP_LICENSE_PRIVATE_KEY` for the **Production** environment. Set its value to the complete contents of `desktop-license-private.pem`, including the `BEGIN PRIVATE KEY` and `END PRIVATE KEY` lines. Save it and redeploy Production so the server functions can read it.
-
-### 3. Embed the matching public key in the desktop source
-
-Open `desktop-license-public.pem`. Copy only the base64 body between `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----`. In `main.js`, replace the base64 body inside `desktopLicensePublicKey` with this body, preserving the PEM header/footer and line breaks. The `desktop-license-public.pem` and `desktop-license-private.pem` files in the project root are ignored by Git for local key setup. Never put the private PEM in `main.js`, renderer files, or any public setting.
-
-Build and distribute new installers for each supported platform using the installer release steps below. The updated public key is needed only when changing/rotating the signing pair; the current build already contains the existing public key. Confirm the Vercel private key and embedded public key are a matching pair before issuing customer keys.
-
-### 4. Generate keys in the live control panel
-
-After the live server is configured, sign in at `https://pos360live.vercel.app/superadmin/` with an authorized control-plane account and complete MFA. Open **Desktop licenses**, choose the key type and count, then generate. The panel can issue **7-day**, **30-day**, or **permanent** desktop keys. Copy and securely deliver each key when it is shown; the server stores a hash and cannot display the full key again. Generate a replacement if a key is lost before activation.
-
-If generation reports `SIGNING_UNAVAILABLE`, the Production environment variable is missing/unreadable or the deployment has not been redeployed. If a newly generated key fails on a desktop, check that its installer embeds the public key paired with the configured Vercel private key. If the key pair was changed, build and distribute a new installer after updating `main.js`; already installed builds still contain the old public key.
+The server stores only a hash and displays each generated key once. Offline permanent activations cannot receive remote revocations; timed keys expire on the device.
 
 ## Activate a key in the offline desktop app
 

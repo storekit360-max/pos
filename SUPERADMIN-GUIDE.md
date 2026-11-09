@@ -16,7 +16,7 @@ Set these Vercel environment variables in Production and redeploy:
 | `SUPERADMIN_SESSION_SECRET` | Independent super admin encryption/session key | `openssl rand -base64 64` (at least 48 characters) |
 | `SUPERADMIN_ALLOWED_IPS` | Optional network allowlist | Comma-separated exact client IP addresses |
 | `CRON_SECRET` | Optional paid-plan housekeeping endpoint | `openssl rand -base64 48` |
-| `DESKTOP_LICENSE_PRIVATE_KEY` | Ed25519 private key used to sign offline desktop licenses | Generate with the commands below; store the full PEM value only in Vercel. |
+| `DESKTOP_LICENSE_PRIVATE_KEY` | Ed25519 private key used to sign offline desktop licenses | Run `npm run license:setup` on a trusted release machine; store the full PEM value only in Vercel. |
 
 Never use the same value for both session secrets. `SUPERADMIN_ALLOWED_IPS` is not enforced by this release's function handler; protect access with Vercel deployment/network controls until an edge allowlist is configured. Do not commit any `.env` file.
 
@@ -52,17 +52,10 @@ The script requires typing `RESET-MFA` interactively. Run it only on a trusted m
 
 ## Future desktop entitlement protocol
 
-The superadmin **Desktop licenses** page issues signed 7-day, 30-day, and permanent licenses. Before enabling it in production, generate one Ed25519 pair on a trusted machine:
-
-```sh
-openssl genpkey -algorithm Ed25519 -out desktop-license-private.pem
-openssl pkey -in desktop-license-private.pem -pubout -out desktop-license-public.pem
-```
-
-Set the complete private PEM as Vercel's `DESKTOP_LICENSE_PRIVATE_KEY`. Put the public PEM body (the single base64 line between its PEM headers) in `main.js` inside `desktopLicensePublicKey`, replacing the existing base64 body, then build and distribute a new desktop installer. The PEM files in the repository root are ignored by Git. Keep the private file out of the repository and rotate the pair only with a coordinated client release. The server stores only a key hash and displays each generated key once. Desktop activation verifies the signature locally, so an offline app can activate without contacting the server. Revocation prevents future activations; an already activated offline copy cannot receive revocation until it reconnects, and signed temporary licenses expire on that device. Legacy hard-coded licenses remain supported.
+Run `npm run license:setup` once on the trusted release computer. Copy the complete `desktop-license-private.pem` value into Vercel Production as `DESKTOP_LICENSE_PRIVATE_KEY`, then redeploy. No public key environment variable or manual `main.js` edit is needed. Installer commands synchronize the matching public key automatically before packaging. Keep the same private key for future releases; changing it requires distributing new desktop installers before issuing keys. The server stores only a key hash and displays each generated key once. Desktop activation verifies signatures locally, so offline apps can activate without contacting the server. Revocation prevents future activations; an already activated offline copy cannot receive revocation, and temporary licenses expire on the device. Legacy hard-coded licenses remain supported.
 
 ## Limitations to account for
 
 This is not yet the complete feature set from the master prompt. The current panel/API still lacks device activation and device revocation flows, full tenant profile editing and feature-flag controls in the UI, plan edit/deactivation controls in the UI, payment void controls in the UI, audit search filters in the UI, and admin role/disable/MFA-reset controls in the UI. There is no payment gateway or email delivery. Atlas snapshots remain an operator responsibility. Complete these gaps and run tenant-isolation and staging end-to-end tests before enabling panel access for additional staff.
 
-Desktop key generation returns `SIGNING_UNAVAILABLE` until `DESKTOP_LICENSE_PRIVATE_KEY` is configured in Vercel and the matching public key has been embedded in a new desktop build. A license revocation only reaches an already activated app if the client is online and polls a revocation service; this release intentionally supports offline activation and therefore cannot remotely disable an offline permanent license.
+Desktop key generation returns `SIGNING_UNAVAILABLE` until `DESKTOP_LICENSE_PRIVATE_KEY` is configured in Vercel and Production is redeployed. If keys fail in the current app, distribute an installer built with `npm run dist:win` or `npm run dist:mac` from the same signing-key setup. A license revocation only reaches an already activated app if the client is online and polls a revocation service; this release supports offline activation and cannot remotely disable an offline permanent license.
