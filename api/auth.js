@@ -3,27 +3,37 @@ const crypto = require('node:crypto');
 const { db } = require('./_db');
 const { json, session, setSession, clearSession, authorized } = require('./_http');
 const { hash, verify } = require('./_password');
-const { ensureMain, tenantId, license, announcements } = require('./_tenant');
+const { ensureMain, tenantId, license, announcements, tenantForRequest, hostSlug } = require('./_tenant');
 module.exports = async (req,res) => {
   res.setHeader('Cache-Control','no-store');
   if (['POST','PUT','DELETE'].includes(req.method) && req.headers.origin) { try { if (new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{error:'Cross-origin request rejected'}); } catch { return json(res,403,{error:'Invalid request origin'}); } }
   try {
     const database = await db(), users = database.collection('users');
     const requestedMode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
+    const hostTenant = await tenantForRequest(database, req);
     if (req.method === 'POST' && !['setup','register','login'].includes(requestedMode) && !authorized(req,res)) return;
     if (req.method === 'GET' && req.url.split('?')[0] === '/api/auth') {
+      if (requestedMode === 'slug') {
+        const slug=String(new URL(req.url,'https://pos.invalid').searchParams.get('value')||'').trim().toLowerCase();
+        if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
+        const used=await database.collection('tenants').findOne({slug},{projection:{_id:1}});
+        return json(res,200,{available:!used,valid:true,subdomain:process.env.POS_ROOT_DOMAIN?`${slug}.${String(process.env.POS_ROOT_DOMAIN).replace(/^https?:\/\//,'').replace(/\/$/,'')}`:null});
+      }
       if (new URL(req.url,'https://pos.invalid').searchParams.get('mode') === 'status') {
-        const initialized = await database.collection('pos_state').findOne({_id:'main'},{projection:{_id:1}});
+        if (hostSlug(req) && !hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
+        const scope = hostTenant?._id || 'main';
+        const initialized = await database.collection('pos_state').findOne({_id:scope},{projection:{_id:1}});
         const tenants = database.collection('tenants');
         const anyTenant = await tenants.findOne({}, {projection:{_id:1}}), setupRequired=!anyTenant && (await users.countDocuments())===0 && !initialized;
         if (setupRequired) return json(res,200,{setupRequired:true});
-        const existing = await users.findOne({},{projection:{_id:1}});
-        if (existing || initialized || anyTenant) { await ensureMain(database); const entitlement=await license(database,'main'),settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.'; return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining)`: '',announcements:await announcements(database,'main')}}); }
+        const existing = await users.findOne({tenantId:scope},{projection:{_id:1}});
+        if (existing || initialized || (scope==='main' && anyTenant)) { const entitlement=await license(database,scope),settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.'; return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main'},license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining)`: '',announcements:await announcements(database,scope)}}); }
         return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true'});
       }
       const s = session(req); if (!s) return json(res,200,{ authenticated:false });
       await ensureMain(database);
       const tid = tenantId(s);
+      if (!hostTenant || hostTenant._id !== tid) return json(res,200,{authenticated:false,user:null});
       const fullUser = await users.findOne({ id:s.userId, tenantId:tid, active:true });
       const user = fullUser && (s.sessionVersion||0)===(fullUser.sessionVersion||0) ? await users.findOne({id:s.userId,tenantId:tid,active:true},{projection:{_id:0,hash:0,tenantId:0,sessionVersion:0}}) : null;
       const entitlement = user ? await license(database, tid) : null;
@@ -49,26 +59,28 @@ module.exports = async (req,res) => {
     }
     if (mode === 'register') {
       if (process.env.POS_REGISTRATION_OPEN !== 'true') return json(res,403,{error:'New account registration is closed. Ask the shop owner to create your account.'});
-      const { name, username, password } = req.body || {};
+      const { name, username, password, business, slug:requestedSlug } = req.body || {};
       const un = String(username || '').trim().toLowerCase();
-      if (!String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter your name, a valid username, and a password of at least 10 characters'});
-      const tenant = await database.collection('tenants').findOne({_id:'main',status:{$nin:['suspended','cancelled','deleted']}});
-      if (!tenant || !await users.findOne({tenantId:'main',role:'owner',active:true})) return json(res,409,{error:'This shop is not accepting new accounts. Ask the shop owner for help.'});
-      const entitlement = await license(database,'main');
-      const limit = Number(entitlement.tenant?.planSnapshot?.userLimit || 5);
-      let reservation = await database.collection('tenants').findOneAndUpdate({_id:'main',staffCount:{$lt:limit}},{$inc:{staffCount:1}},{returnDocument:'after'});
-      if (!reservation) { const count=await users.countDocuments({tenantId:'main',active:true}); await database.collection('tenants').updateOne({_id:'main',staffCount:{$exists:false}},{$set:{staffCount:count}}); reservation=await database.collection('tenants').findOneAndUpdate({_id:'main',staffCount:{$lt:limit}},{$inc:{staffCount:1}},{returnDocument:'after'}); }
-      if (!reservation) return json(res,409,{error:'This shop has reached its account limit. Ask the owner for help.'});
-      const account={id:crypto.randomUUID(),tenantId:'main',name:String(name).trim(),username:un,role:'cashier',active:true,hash:await hash(String(password)),createdAt:new Date()};
-      try { await users.insertOne(account); }
-      catch(error) { await database.collection('tenants').updateOne({_id:'main'},{$inc:{staffCount:-1}}); if(error.code===11000)return json(res,409,{error:'That username is already in use'}); throw error; }
-      setSession(res,account.id,'main',0);
-      return json(res,201,{ok:true,user:{id:account.id,name:account.name,username:account.username,role:account.role,active:true}});
+      const shopName=String(business||'').trim(),slug=String(requestedSlug||'').trim().toLowerCase();
+      if (hostSlug(req)) return json(res,400,{error:'Create a shop from the main domain, not a shop subdomain'});
+      if (!String(process.env.POS_ROOT_DOMAIN||'').trim()) return json(res,503,{error:'Shop subdomains are not configured yet'});
+      if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter a shop name, available subdomain, owner name, valid username, and password of at least 10 characters'});
+      if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:'That subdomain is already taken'});
+      const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:String(name).trim(),username:un,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
+      const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'Trial',userLimit:5,features:[]},trialEndsAt:new Date(Date.now()+14*86400000),graceDays:7,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
+      try {
+        await database.collection('tenants').insertOne(tenant);
+        await users.insertOne(owner);
+        await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business:shopName,phone:'',address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
+      } catch(error) { await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),users.deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]); if(error.code===11000)return json(res,409,{error:'That username or subdomain is already in use'}); throw error; }
+      const root=String(process.env.POS_ROOT_DOMAIN||'').trim().replace(/^https?:\/\//,'').replace(/\/$/,'');
+      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:root?`https://${slug}.${root}`:null,user:{id:owner.id,name:owner.name,username:owner.username,role:'owner'}});
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();
       await ensureMain(database);
-      const user = await users.findOne({username:un,active:true});
+      if (!hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
+      const user = await users.findOne({username:un,tenantId:hostTenant._id,active:true});
       if (!user || !await verify(String(password || ''),user.hash)) return json(res,401,{error:'Invalid username or password'});
       const entitlement = await license(database, user.tenantId || 'main');
       if (['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
@@ -80,6 +92,7 @@ module.exports = async (req,res) => {
       const s = session(req);
       if (!s) return json(res,401,{error:'Please sign in again'});
       const tid = tenantId(s);
+      if (!hostTenant || hostTenant._id !== tid) return json(res,403,{error:'Session does not belong to this shop',code:'TENANT_HOST_MISMATCH'});
       const actor = await users.findOne({id:s.userId,tenantId:tid,active:true});
       if (!actor || actor.role !== 'owner') return json(res,403,{error:'Only an active owner can manage staff accounts'});
       const { action, id, name, username, password, role, active } = req.body || {};
@@ -88,7 +101,7 @@ module.exports = async (req,res) => {
         if (!String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10 || !['owner','manager','cashier'].includes(role)) return json(res,400,{error:'Enter a name, valid username, role, and password of at least 10 characters'});
         const ent = await license(database,tid);
         const limit = Number(ent.tenant?.planSnapshot?.userLimit || 5);
-        if (await users.findOne({username:un})) return json(res,409,{error:'Username already exists'});
+        if (await users.findOne({username:un,tenantId:tid})) return json(res,409,{error:'Username already exists in this shop'});
         let reservation = await database.collection('tenants').findOneAndUpdate({_id:tid,staffCount:{$lt:limit}},{$inc:{staffCount:1}},{returnDocument:'after'});
         if (!reservation) { const count=await users.countDocuments({tenantId:tid,active:true}); await database.collection('tenants').updateOne({_id:tid,staffCount:{$exists:false}},{$set:{staffCount:count}}); reservation=await database.collection('tenants').findOneAndUpdate({_id:tid,staffCount:{$lt:limit}},{$inc:{staffCount:1}},{returnDocument:'after'}); }
         if (!reservation) return json(res,409,{error:'This plan has reached its staff account limit',code:'USER_LIMIT'});

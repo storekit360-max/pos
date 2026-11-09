@@ -299,6 +299,8 @@
       secret(`Temporary password for ${d.owner.username}`,d.temporaryPassword);
       location.hash=`#/tenants/${encodeURIComponent(d.tenant._id)}`;
     });
+    const hint=el('small','Enter a slug to check its subdomain.','muted');f.slug.append(hint);let checkTimer;
+    f.slug.control.addEventListener('input',()=>{clearTimeout(checkTimer);hint.textContent='Checking subdomain…';checkTimer=setTimeout(async()=>{try{const r=await fetch(`/api/auth?mode=slug&value=${encodeURIComponent(f.slug.control.value.trim().toLowerCase())}`,{credentials:'same-origin'}),d=await r.json();hint.textContent=d.valid?(d.available?`${d.subdomain||f.slug.control.value} is available`:`${f.slug.control.value} is already taken`):'Use 2–49 lowercase letters, numbers, and dashes.';}catch{hint.textContent='Could not check subdomain availability.';}},250);});
   }
 
   /* ================= Tenants: detail (edit, status, delete, staff) ================= */

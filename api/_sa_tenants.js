@@ -173,7 +173,7 @@ const validUsername=u=>/^[a-z0-9._-]{3,40}$/.test(u);
 async function staffCreate(database,actor,req,body){
   const tenant=await loadTenant(database,String(body.tenantId||'')),name=String(body.name||'').trim(),username=String(body.username||'').trim().toLowerCase(),role=String(body.role||''),password=String(body.password||tempPassword());
   if(name.length<2||name.length>80||!validUsername(username)||!STAFF_ROLES.includes(role)||password.length<10)throw fail('Enter a name, a username (3-40 letters, digits, . _ -), a role, and a password of at least 10 characters');
-  if(await database.collection('users').findOne({username},{projection:{_id:1}}))throw fail('Username already exists',409,'DUPLICATE');
+  if(await database.collection('users').findOne({tenantId:tenant._id,username},{projection:{_id:1}}))throw fail('Username already exists for this shop',409,'DUPLICATE');
   await reserveSlot(database,tenant);
   const user={id:crypto.randomUUID(),tenantId:tenant._id,name,username,role,active:true,hash:await hash(password),createdAt:new Date()};
   try{await database.collection('users').insertOne(user);}
@@ -189,7 +189,7 @@ async function staffUpdate(database,actor,req,body){
   if(body.name!==undefined){const n=String(body.name).trim();if(n.length<2||n.length>80)throw fail('Name must be 2-80 characters');set.name=n;}
   if(body.username!==undefined){
     const u=String(body.username).trim().toLowerCase();if(!validUsername(u))throw fail('Username must be 3-40 letters, digits, . _ -');
-    if(u!==old.username){if(await users.findOne({username:u},{projection:{_id:1}}))throw fail('Username already exists',409,'DUPLICATE');set.username=u;invalidate=true;}
+    if(u!==old.username){if(await users.findOne({tenantId,username:u},{projection:{_id:1}}))throw fail('Username already exists for this shop',409,'DUPLICATE');set.username=u;invalidate=true;}
   }
   const newRole=body.role!==undefined?String(body.role):old.role,newActive=typeof body.active==='boolean'?body.active:old.active;
   if(!STAFF_ROLES.includes(newRole))throw fail('Invalid role');

@@ -1,12 +1,14 @@
 'use strict';
 const { db } = require('./_db');
 const { json, authorized } = require('./_http');
-const { ensureMain, tenantId, license } = require('./_tenant');
+const { ensureMain, tenantId, license, tenantForRequest } = require('./_tenant');
 module.exports = async (req,res) => {
   const s = authorized(req,res); if (!s) return;
   try {
     const database = await db(); await ensureMain(database);
     const tid = tenantId(s), users = database.collection('users');
+    const hostTenant=await tenantForRequest(database,req);
+    if (!hostTenant || hostTenant._id !== tid) return json(res,403,{error:'Session does not belong to this shop',code:'TENANT_HOST_MISMATCH'});
     const entitlement = await license(database,tid);
     if (['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
     const user = await users.findOne({id:s.userId,tenantId:tid,active:true}); if (!user || (s.sessionVersion||0)!==(user.sessionVersion||0)) return json(res,401,{error:'Please sign in again'});

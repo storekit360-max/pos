@@ -14,6 +14,20 @@ async function ensureMain(database) {
 
 function tenantId(session) { return typeof session?.tenantId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(session.tenantId) ? session.tenantId : 'main'; }
 
+function hostSlug(req) {
+  const host = String(req.headers.host || '').trim().toLowerCase().replace(/:\d+$/, '');
+  const root = String(process.env.POS_ROOT_DOMAIN || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  if (!root || !host.endsWith(`.${root}`)) return null;
+  const slug = host.slice(0, -(root.length + 1));
+  return /^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) && !slug.includes('.') ? slug : null;
+}
+
+async function tenantForRequest(database, req) {
+  const slug = hostSlug(req);
+  if (!slug) return database.collection('tenants').findOne({ _id: 'main' });
+  return database.collection('tenants').findOne({ slug, status: { $nin: ['deleted'] } });
+}
+
 async function license(database, id) {
   await ensureMain(database);
   const tenant = await database.collection('tenants').findOne({ _id: id }, { projection: { name: 1, status: 1, expiresAt: 1, trialEndsAt: 1, graceDays: 1, planSnapshot: 1 } });
@@ -36,4 +50,4 @@ async function announcements(database, id) {
   return database.collection('announcements').find({ active: true, startsAt: { $lte: now }, endsAt: { $gt: now }, $or: [{ tenantIds: 'all' }, { tenantIds: id }] }, { projection: { _id: 0, title: 1, body: 1, severity: 1, startsAt: 1, endsAt: 1 } }).limit(10).toArray();
 }
 
-module.exports = { ensureMain, tenantId, license, announcements };
+module.exports = { ensureMain, tenantId, license, announcements, hostSlug, tenantForRequest };

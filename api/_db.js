@@ -73,10 +73,15 @@ function connect(uri) {
 async function ensureIndexes(database) {
   if (!indexesPromise) {
     indexesPromise = (async () => {
-      await database.collection('users').createIndex({ username: 1 }, { unique: true });
+      // Usernames are unique within a shop. Remove the former global constraint
+      // so separate tenant subdomains can independently choose the same username.
+      try { await database.collection('users').dropIndex('username_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
+      await database.collection('users').createIndex({ tenantId: 1, username: 1 }, { unique: true });
+      try { await database.collection('tenants').dropIndex('slug_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
+      await database.collection('tenants').createIndex({ slug: 1 }, { unique: true, sparse: true });
       const optional = [
         ['users', { tenantId: 1, active: 1 }], ['users', { id: 1, tenantId: 1 }],
-        ['tenants', { slug: 1 }, { unique: true }], ['superadmins', { email: 1 }, { unique: true }],
+        ['superadmins', { email: 1 }, { unique: true }],
         ['superadmin_sessions', { tokenHash: 1 }, { unique: true }], ['superadmin_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
         ['audit_logs', { ts: -1 }], ['rate_limits', { expiresAt: 1 }, { expireAfterSeconds: 0 }], ['users', { tenantId: 1, createdAt: -1 }], ['tenants', { status: 1, createdAt: -1 }], ['users', { id: 1 }], ['payments', { tenantId: 1, createdAt: -1 }], ['announcements', { active: 1, startsAt: 1, endsAt: 1 }],
         ['licenseKeys', { keyHash: 1 }, { unique: true }], ['tenant_backups', { tenantId: 1, createdAt: -1 }]
@@ -88,6 +93,7 @@ async function ensureIndexes(database) {
     })().catch((cause) => {
       indexesPromise = null;
       console.error('POS index setup failed:', cause.message);
+      throw cause;
     });
   }
   await indexesPromise;
