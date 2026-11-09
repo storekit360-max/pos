@@ -36,7 +36,7 @@ In Vercel, open the POS project **Settings → Environment Variables** and add `
 
 ### 3. Embed the matching public key in the desktop source
 
-Open `desktop-license-public.pem`. Copy only the base64 body between `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----`. In `main.js`, replace the base64 body inside `desktopLicensePublicKey` with this body, preserving the PEM header/footer and line breaks. Never put the private PEM in `main.js`, renderer files, or any public setting.
+Open `desktop-license-public.pem`. Copy only the base64 body between `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----`. In `main.js`, replace the base64 body inside `desktopLicensePublicKey` with this body, preserving the PEM header/footer and line breaks. The `desktop-license-public.pem` and `desktop-license-private.pem` files in the project root are ignored by Git for local key setup. Never put the private PEM in `main.js`, renderer files, or any public setting.
 
 Build and distribute new installers for each supported platform using the installer release steps below. The updated public key is needed only when changing/rotating the signing pair; the current build already contains the existing public key. Confirm the Vercel private key and embedded public key are a matching pair before issuing customer keys.
 
@@ -44,7 +44,7 @@ Build and distribute new installers for each supported platform using the instal
 
 After the live server is configured, sign in at `https://pos360live.vercel.app/superadmin/` with an authorized control-plane account and complete MFA. Open **Desktop licenses**, choose the key type and count, then generate. The panel can issue **7-day**, **30-day**, or **permanent** desktop keys. Copy and securely deliver each key when it is shown; the server stores a hash and cannot display the full key again. Generate a replacement if a key is lost before activation.
 
-If generation reports `SIGNING_UNAVAILABLE`, the Production environment variable is missing/unreadable or the deployment has not been redeployed. If a newly generated key fails on a desktop, check that its installer embeds the public key paired with the configured Vercel private key.
+If generation reports `SIGNING_UNAVAILABLE`, the Production environment variable is missing/unreadable or the deployment has not been redeployed. If a newly generated key fails on a desktop, check that its installer embeds the public key paired with the configured Vercel private key. If the key pair was changed, build and distribute a new installer after updating `main.js`; already installed builds still contain the old public key.
 
 ## Activate a key in the offline desktop app
 

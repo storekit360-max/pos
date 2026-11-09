@@ -11,6 +11,8 @@ The-Smart-POS-Client.zip
 
 # Private license inventory
 /LICENSE-KEYS-PRIVATE.md
+/desktop-license-private.pem
+/desktop-license-public.pem
 
 # Local operating system files
 .DS_Store
