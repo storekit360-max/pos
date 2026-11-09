@@ -251,12 +251,26 @@ const legacyLicenseKeys = {
   'e27431d381bc2c4582225357086a54491801ff7d57255755b39928adb004dbf0': 'monthly',
   'a6402babef1f91895a5e309ea04710dd21508febb35a49ff5a024ff95ed501c4': 'monthly'
 };
+// Public key for signed desktop entitlements. The matching private key belongs
+// only in the live server's DESKTOP_LICENSE_PRIVATE_KEY environment variable.
+const desktopLicensePublicKey = `-----BEGIN PUBLIC KEY-----
+__DESKTOP_LICENSE_PUBLIC_KEY__
+-----END PUBLIC KEY-----`;
 function readLicense() { try { return JSON.parse(fs.readFileSync(licenseFile(), 'utf8')); } catch { return null; } }
 function writeLicense(data) { fs.mkdirSync(path.dirname(licenseFile()), { recursive: true }); fs.writeFileSync(licenseFile(), JSON.stringify(data)); }
 function licenseStatus() {
   const l = readLicense();
   if (!l || !l.startedAt) return { initialized: false, active: false };
   const now = Date.now();
+  if (l.signedEntitlement) {
+    const { encoded, signature } = l.signedEntitlement;
+    try {
+      if (typeof encoded !== 'string' || typeof signature !== 'string' || !crypto.verify(null, Buffer.from(encoded), desktopLicensePublicKey, Buffer.from(signature, 'base64url'))) return { initialized: true, active: false, type: 'invalid' };
+      const entitlement = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+      if (entitlement.v !== 1 || !['7', '30', 'permanent'].includes(String(entitlement.kind)) || (entitlement.expiresAt && now >= entitlement.expiresAt)) return { initialized: true, active: false, type: entitlement.kind === '30' ? 'monthly' : entitlement.kind === '7' ? 'temporary' : 'permanent', expiresAt: entitlement.expiresAt || undefined };
+      return { initialized: true, active: true, type: entitlement.kind === '30' ? 'monthly' : entitlement.kind === '7' ? 'temporary' : 'permanent', expiresAt: entitlement.expiresAt || undefined };
+    } catch (_) { return { initialized: true, active: false, type: 'invalid' }; }
+  }
   if (l.type === 'permanent') return { initialized: true, active: true, type: 'permanent' };
   const isTimedLicense = l.type === 'temporary' || l.type === 'monthly';
   const duration = l.type === 'temporary' ? 7 * 86400000 : l.type === 'monthly' ? 30 * 86400000 : TRIAL_MS;
@@ -268,8 +282,20 @@ ipcMain.handle('license:start', () => { if (!readLicense()) writeLicense({ start
 ipcMain.handle('license:activate', (_e, raw) => {
   const key = String(raw || '').trim().toUpperCase();
   const type = legacyLicenseKeys[crypto.createHash('sha256').update(key).digest('hex')];
-  if (!type) return { ok: false, error: 'Invalid license key' };
   const l = readLicense() || { startedAt: Date.now() };
+  if (!type) {
+    const parts = key.split('.');
+    if (parts.length !== 3 || parts[0] !== 'SP1') return { ok: false, error: 'Invalid license key' };
+    try {
+      const [, encoded, signature] = parts;
+      if (!crypto.verify(null, Buffer.from(encoded), desktopLicensePublicKey, Buffer.from(signature, 'base64url'))) return { ok: false, error: 'Invalid license key' };
+      const entitlement = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+      if (entitlement.v !== 1 || !['7', '30', 'permanent'].includes(String(entitlement.kind)) || !entitlement.id || !entitlement.nonce || (entitlement.expiresAt && Date.now() >= entitlement.expiresAt)) return { ok: false, error: 'This license key is invalid or expired' };
+      const mappedType = entitlement.kind === '30' ? 'monthly' : entitlement.kind === '7' ? 'temporary' : 'permanent';
+      writeLicense({ ...l, type: mappedType, activatedAt: entitlement.issuedAt, signedEntitlement: { encoded, signature } });
+      return { ok: true, status: licenseStatus() };
+    } catch (_) { return { ok: false, error: 'Invalid license key' }; }
+  }
   writeLicense({ ...l, type, activatedAt: Date.now() });
   return { ok: true, status: licenseStatus() };
 });

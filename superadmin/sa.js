@@ -64,6 +64,7 @@
     nav.classList.remove('open');$('#menu').setAttribute('aria-expanded','false');
     $('#who').textContent=admin?`${admin.email} · ${admin.role}`:'';
     const staffLink=nav.querySelector('a[href="#/staff"]');if(staffLink)staffLink.hidden=!['root','support'].includes(admin?.role);
+    const licenseLink=nav.querySelector('a[href="#/licenses"]');if(licenseLink)licenseLink.hidden=!['root','billing','readonly'].includes(admin?.role);
   }
   function endSession(message,info=true){
     csrf='';admin=null;pending=null;
@@ -458,6 +459,33 @@
     await staffPanel(c,{});
   }
 
+  async function licensesPage(){
+    heading('Desktop licenses',btn('Refresh',()=>licensesPage()));
+    if(!['root','billing','readonly'].includes(admin?.role)){card().append(el('p','Your role cannot view desktop licenses.','muted'));return;}
+    const create=card('Create offline license keys');
+    create.append(el('p','Keys are signed by the live server and can be activated in the desktop POS while offline. A revoked key cannot be blocked on a computer that is already offline; timed keys stop working at expiry.','muted'));
+    const f={kind:field('License duration','select'),count:field('Number of keys','number','1')};
+    options(f.kind.control,[['7','7 days'],['30','1 month (30 days)'],['permanent','Permanent']],'7');f.count.control.min='1';f.count.control.max='100';
+    create.append(f.kind,f.count);
+    const generate=btn('Generate keys',async()=>busy(generate,async()=>{
+      const d=await api('licenses.generate',{kind:f.kind.control.value,count:Number(f.count.control.value)});
+      secret('Copy and deliver these keys now. They will not be shown again.',d.keys.join('\n'));
+      await licensesPage();
+    }),'primary');
+    if(admin?.role==='readonly')generate.disabled=true;
+    create.append(generate);
+    const inventory=card('Issued desktop licenses'),out=el('p','Loading licenses…','muted');inventory.append(out);
+    let d;try{d=await api('licenses.list');}catch(e){out.textContent=e.message;out.className='error-text';return;}
+    out.remove();
+    if(!d.items.length){inventory.append(el('p','No desktop licenses have been issued.','empty'));return;}
+    inventory.append(table(['Type','Key ending','Status','Created','Expires',''],d.items,(tr,item)=>{
+      tr.append(el('td',item.kind==='7'?'7 days':item.kind==='30'?'1 month':'Permanent'),el('td',item.keyHint?`…${item.keyHint}`:'—','mono'),el('td',item.status),el('td',fmt(item.createdAt)),el('td',item.expiresAt?fmt(item.expiresAt):'Never'));
+      const actions=el('td',undefined,'actions');
+      if(item.status==='active'&&admin?.role!=='readonly')actions.append(btn('Revoke',()=>dialog('Revoke desktop license','The key will be blocked from future activations. An already activated offline copy cannot receive revocation until it connects; timed access ends at its expiry.',[],'Revoke',async()=>{await api('licenses.revokeDesktop',{id:item._id});closeModal();toast('Desktop license revoked');await licensesPage();},true)));
+      tr.append(actions);
+    }));
+  }
+
   /* ================= Routing ================= */
   async function route(){
     if(!admin){if(authBox.hidden)showLogin();return;}
@@ -468,6 +496,7 @@
       switch(parts[0]){
         case 'tenants':parts[1]?await tenantDetail(decodeURIComponent(parts[1])):await tenants();break;
         case 'staff':await staffPage();break;
+        case 'licenses':await licensesPage();break;
         default:await dashboard();
       }
     }catch(e){if(!e.handled)toast(e.message,true);}
