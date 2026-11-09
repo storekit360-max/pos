@@ -87,7 +87,7 @@ function loginScreen() {
         const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:$('#lu').value.trim().toLowerCase(),password:$('#lp').value})});
         const result = await readApiResponse(r, 'Sign-in failed'); licenseInfo=result.license||null;
         const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
-        cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters); localStorage.setItem(LS_KEY,JSON.stringify(db));
+        cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {}); localStorage.setItem(LS_KEY,JSON.stringify(db));
         me=result.user; log('login',me.username); await flush(); shell(); return;
       } catch (err) { toast(err.message || 'Live sign-in failed','err'); return; }
     }
@@ -127,14 +127,14 @@ async function liveSignIn(username, password) {
   const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
   const result = await readApiResponse(r, 'Sign-in failed');
   const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
-  cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data;
+  cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data && typeof response.data === 'object' ? response.data : defaults();
   const df = defaults(); db.settings = Object.assign(df.settings, db.settings); for (const k in df) if (!(k in db)) db[k] = df[k]; db.counters = Object.assign(df.counters, db.counters);
   localStorage.setItem(LS_KEY, JSON.stringify(db));
   me = result.user; licenseInfo=result.license||null; log('login', me.username); await flush(); shell();
 }
 
 function startupScreen() {
-  $('#app').innerHTML = `<div class="login" role="status" aria-live="polite"><div class="card"><h2 style="margin:4px 0">Loading POS…</h2><p class="mut">Checking this shop and restoring your session.</p></div></div>`;
+  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">THE SMART POS</p><h2 style="margin:4px 0">Getting your shop ready</h2><p class="mut">Checking your shop and restoring your session…</p><span class="startup-note">This usually takes just a moment</span></div></div>`;
 }
 
 function liveStartupError(message) {
@@ -265,7 +265,7 @@ document.addEventListener('keydown', e => {
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
-      cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters);
+      cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {});
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();}
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}

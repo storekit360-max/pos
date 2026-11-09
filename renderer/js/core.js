@@ -11,7 +11,13 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const r2 = n => Math.round((+n + Number.EPSILON) * 100) / 100;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const S = () => db.settings;
+// Startup can briefly run before local/cloud data is available. Keep shared
+// helpers safe during that window and repair partially-shaped cloud payloads.
+const S = () => {
+  if (!db || typeof db !== 'object') db = defaults();
+  if (!db.settings || typeof db.settings !== 'object' || Array.isArray(db.settings)) db.settings = defaults().settings;
+  return db.settings;
+};
 const money = n => S().currency + ' ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
@@ -113,7 +119,7 @@ async function loadDB() {
     else d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
   }
   catch (e) { throw new Error('Local shop data could not be opened. The app has not created or replaced any database files. ' + (e?.message || '')); }
-  if (d) { const df = defaults(); d.settings = Object.assign(df.settings, d.settings); for (const k in df) if (!(k in d)) d[k] = df[k]; d.counters = Object.assign(df.counters, d.counters); }
+  if (d && typeof d === 'object' && !Array.isArray(d)) { const df = defaults(); d.settings = Object.assign(df.settings, d.settings && typeof d.settings === 'object' && !Array.isArray(d.settings) ? d.settings : {}); for (const k in df) if (!(k in d)) d[k] = df[k]; d.counters = Object.assign(df.counters, d.counters && typeof d.counters === 'object' ? d.counters : {}); }
   // Replace the placeholder URL retained by older client profiles.
   if (d?.settings?.updateManifestUrl === 'https://YOUR-VERCEL-DOMAIN/updates/latest.json') {
     d.settings.updateManifestUrl = defaults().settings.updateManifestUrl;
