@@ -14,9 +14,19 @@ async function ensureMain(database) {
 
 function tenantId(session) { return typeof session?.tenantId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(session.tenantId) ? session.tenantId : 'main'; }
 
+function rootDomain(req) {
+  const configured = String(process.env.POS_ROOT_DOMAIN || '').trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0].replace(/:\d+$/, '');
+  if (configured) return configured;
+  const host = String(req?.headers?.host || '').trim().toLowerCase().replace(/:\d+$/, '');
+  // Production custom domains work without a separate env var. Never infer a
+  // wildcard parent from Vercel's shared deployment domain or local hosts.
+  if (!host || host === 'localhost' || host === '127.0.0.1' || host.endsWith('.vercel.app')) return '';
+  return host;
+}
+
 function hostSlug(req) {
   const host = String(req.headers.host || '').trim().toLowerCase().replace(/:\d+$/, '');
-  const root = String(process.env.POS_ROOT_DOMAIN || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const root = rootDomain(req);
   if (!root || !host.endsWith(`.${root}`)) return null;
   const slug = host.slice(0, -(root.length + 1));
   return /^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) && !slug.includes('.') ? slug : null;
@@ -50,4 +60,4 @@ async function announcements(database, id) {
   return database.collection('announcements').find({ active: true, startsAt: { $lte: now }, endsAt: { $gt: now }, $or: [{ tenantIds: 'all' }, { tenantIds: id }] }, { projection: { _id: 0, title: 1, body: 1, severity: 1, startsAt: 1, endsAt: 1 } }).limit(10).toArray();
 }
 
-module.exports = { ensureMain, tenantId, license, announcements, hostSlug, tenantForRequest };
+module.exports = { ensureMain, tenantId, license, announcements, rootDomain, hostSlug, tenantForRequest };
