@@ -132,7 +132,10 @@ function liveAuthScreen(view, opts = {}) {
   } else if (isRegister) {
     panel = `<form id="liveRegister" class="fg"><p class="mut full" style="margin:0;font-size:13px;text-align:center">Create your staff account for ${esc(s.business || 'this shop')}.</p><label class="f full"><span>Your name *</span><input name="name" autocomplete="name" required></label><label class="f full"><span>Choose a username *</span><input name="username" autocomplete="username" required minlength="3"></label><label class="f"><span>Password * <small>(at least 10 characters)</small></span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Repeat password *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create account</button></form>`;
   } else if (liveSetupRequired === false) {
-    panel = `<div style="text-align:center;padding:8px 0"><p>The owner account for this shop is already created.</p><p class="mut" style="font-size:13px">Sign in with it. The owner adds staff accounts from inside the app.</p><button type="button" class="btn btn-p btn-lg" data-view="login">Go to sign in</button></div>`;
+    // If an old link or stale UI state opens setup after initialization, show
+    // the normal sign-in choice instead of a dead-end owner setup message.
+    liveAuthScreen('login', { animate: true });
+    return;
   } else {
     panel = `<form id="liveSetup" class="fg">
 <p class="mut full" style="margin:0;font-size:13px;text-align:center">Create the owner account for your shop. You only do this once.</p>
@@ -142,7 +145,7 @@ function liveAuthScreen(view, opts = {}) {
 <details class="full"><summary class="mut" style="cursor:pointer;font-size:13px">More shop details (optional)</summary><div class="fg" style="margin-top:8px">${[['phone', 'Phone', s.phone], ['currency', 'Currency symbol', s.currency], ['address', 'Address', s.address]].map(([k, l, v]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"></label>`).join('')}</div></details>
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${liveSetupRequired || liveRegistrationOpen ? tab('setup', liveSetupRequired ? 'Create shop' : 'Owner setup') : ''}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${liveSetupRequired ? tab('setup', 'Create shop') : liveRegistrationOpen ? tab('register', 'Create account') : ''}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
 
   document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
   const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
