@@ -98,6 +98,15 @@ function loginScreen() {
 
 let startupReady = false;
 
+function normalizeData(data) {
+  const df = defaults();
+  const normalized = data && typeof data === 'object' && !Array.isArray(data) ? data : df;
+  normalized.settings = Object.assign(df.settings, normalized.settings && typeof normalized.settings === 'object' && !Array.isArray(normalized.settings) ? normalized.settings : {});
+  for (const key of Object.keys(df)) if (!(key in normalized)) normalized[key] = df[key];
+  normalized.counters = Object.assign(df.counters, normalized.counters && typeof normalized.counters === 'object' && !Array.isArray(normalized.counters) ? normalized.counters : {});
+  return normalized;
+}
+
 function setupScreen() {
   const s = S();
   $('#app').innerHTML = `<div class="login"><div class="card" style="width:520px;text-align:left"><div style="text-align:center"><h2 style="margin:4px 0">Welcome – First-time setup</h2><p class="mut">Create an owner account to get started.</p></div><form id="sf" class="fg">
@@ -128,7 +137,7 @@ async function liveSignIn(username, password) {
   const result = await readApiResponse(r, 'Sign-in failed');
   const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
   cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data && typeof response.data === 'object' ? response.data : defaults();
-  const df = defaults(); db.settings = Object.assign(df.settings, db.settings); for (const k in df) if (!(k in db)) db[k] = df[k]; db.counters = Object.assign(df.counters, db.counters);
+  db = normalizeData(db);
   localStorage.setItem(LS_KEY, JSON.stringify(db));
   me = result.user; licenseInfo=result.license||null; log('login', me.username); await flush(); shell();
 }
@@ -234,7 +243,7 @@ document.addEventListener('keydown', e => {
     // been checked. In particular, an unknown tenant host must not look valid.
     db = defaults();
     startupScreen();
-    await loadDB();
+    // Web local storage is a cache only; cloud data below is authoritative.
     let status, setup, signed;
     try {
       [status, signed] = await Promise.all([
@@ -265,12 +274,13 @@ document.addEventListener('keydown', e => {
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
-      cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {});
+      if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) throw new Error('The shop data is missing or invalid. Contact support to restore this shop.');
+      cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=normalizeData(response.data);
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();}
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
       me=signed.user; licenseInfo=signed.license||null; shell(); if(cloudMutationId)queueCloudSync();
-    } else { db = defaults(); loginScreen(); }
+    } else { db = normalizeData(defaults()); loginScreen(); }
     startupReady = true;
     const liveSubmit = $('#lf button[type="submit"]'); if (liveSubmit) liveSubmit.disabled = false;
     window.updateUi?.start(); return;
@@ -295,6 +305,11 @@ document.addEventListener('keydown', e => {
   if (window.posApi?.uiBootOk) await window.posApi.uiBootOk();
 })().catch(err => {
   console.error('Application startup failed:', err);
+  if (LIVE_WEB) {
+    // An expired session cookie is expected on a fresh tab or device.
+    try { db = normalizeData(defaults()); me = null; loginScreen(); return; }
+    catch (_) { /* Fall through only if the recovery screen cannot render. */ }
+  }
   const root = document.querySelector('#app');
   if (root) root.innerHTML = `<div class="login"><div class="card"><h2>Could not start POS</h2><p class="mut">${esc(err && err.message ? err.message : err)}</p><p>Close the app and start it again. If this keeps happening, share this message with support.</p><button class="btn btn-p" onclick="location.reload()">Retry</button></div></div>`;
 });
