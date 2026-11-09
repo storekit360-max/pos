@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node launch.js",
     "seed:superadmin": "node scripts/seed-superadmin.js",
-    "dist:win": "electron-builder --win nsis --x64 && node scripts/prepare-client.js win",
-    "dist:mac": "electron-builder --mac dmg zip --arm64 && electron-builder --mac dmg zip --x64 && node scripts/prepare-client.js mac",
-    "dist:mac:x64": "electron-builder --mac dmg zip --x64 && node scripts/prepare-client.js mac-x64",
+    "dist:win": "electron-builder --win nsis dir --x64 && node scripts/prepare-client.js win",
+    "dist:mac": "electron-builder --mac dir --arm64 && electron-builder --mac dir --x64 && node scripts/prepare-client.js mac",
+    "dist:mac:x64": "electron-builder --mac dir --x64 && node scripts/prepare-client.js mac-x64",
     "dist:current": "electron-builder && node scripts/prepare-client.js current",
     "release:stage": "node scripts/prepare-update-manifest.js",
     "release:manifest": "node scripts/prepare-update-manifest.js",
