@@ -129,6 +129,12 @@ function startupScreen() {
   $('#app').innerHTML = `<div class="login" role="status" aria-live="polite"><div class="card"><h2 style="margin:4px 0">Loading POS…</h2><p class="mut">Checking this shop and restoring your session.</p></div></div>`;
 }
 
+function liveStartupError(message) {
+  const safeMessage = esc(message || 'The live account service is unavailable.');
+  $('#app').innerHTML = `<div class="login" role="alert"><div class="card"><h2 style="margin:4px 0">Could not connect to POS</h2><p class="mut">${safeMessage}</p><button id="startupRetry" class="btn btn-p" type="button">Try again</button></div></div>`;
+  $('#startupRetry').onclick = () => location.reload();
+}
+
 function liveAuthScreen(view, opts = {}) {
   const s = S(), isSetup = view === 'setup', isRegister = view === 'register';
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
@@ -233,7 +239,7 @@ document.addEventListener('keydown', e => {
       setup = responses[0]; signed = responses[1];
     } catch (err) {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
-      db = defaults(); loginScreen(); window.updateUi?.start(); return;
+      db = defaults(); liveStartupError(cloudLastError); window.updateUi?.start(); return;
     }
     if (!setup.setupRequired && !setup.tenant && location.hostname.split('.').length > 2) {
       cloudLastError = 'This shop address is not configured. Check the subdomain and try again.';

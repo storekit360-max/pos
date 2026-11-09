@@ -5,6 +5,7 @@
 const crypto=require('node:crypto');
 const {hash}=require('./_password');
 const {audit}=require('./_sa_audit');
+const {registerTenantDomain}=require('./_vercel-domain');
 
 const safeId=x=>typeof x==='string'&&/^[a-zA-Z0-9_-]{1,64}$/.test(x);
 const tempPassword=()=>crypto.randomBytes(18).toString('base64url');
@@ -106,8 +107,13 @@ async function create(database,actor,req,body){
     if(e.code===11000)throw fail('Username or tenant slug already exists',409,'DUPLICATE');
     throw e;
   }
+  let domainRegistration;
+  try{domainRegistration=await registerTenantDomain(slug);}catch(e){
+    console.error('Vercel domain registration failed:',e.message);
+    domainRegistration={error:e.code==='VERCEL_DOMAIN_CONFIG'?e.message:'Tenant created, but Vercel did not confirm the hostname. Check Vercel project domain settings.'};
+  }
   await audit(database,actor,req,'tenant.create','tenant',id,id,`${name} and owner account created`);
-  return {tenant:{...tenant,userCount:1},owner:{id:owner.id,name:owner.name,username:owner.username,role:owner.role},temporaryPassword:password};
+  return {tenant:{...tenant,userCount:1},owner:{id:owner.id,name:owner.name,username:owner.username,role:owner.role},temporaryPassword:password,domainRegistration};
 }
 async function update(database,actor,req,id,body){
   if(!safeId(id))throw fail('Invalid tenant id');

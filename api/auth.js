@@ -4,6 +4,7 @@ const { db } = require('./_db');
 const { json, session, setSession, clearSession, authorized } = require('./_http');
 const { hash, verify } = require('./_password');
 const { ensureMain, tenantId, license, announcements, rootDomain, tenantForRequest, hostSlug } = require('./_tenant');
+const { registerTenantDomain } = require('./_vercel-domain');
 module.exports = async (req,res) => {
   res.setHeader('Cache-Control','no-store');
   if (['POST','PUT','DELETE'].includes(req.method) && req.headers.origin) { try { if (new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{error:'Cross-origin request rejected'}); } catch { return json(res,403,{error:'Invalid request origin'}); } }
@@ -79,7 +80,13 @@ module.exports = async (req,res) => {
         await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business:shopName,phone:'',address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
       } catch(error) { await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),users.deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]); if(error.code===11000)return json(res,409,{error:'That username or POS address is already in use'}); throw error; }
       const root=configuredRoot;
-      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,user:{id:owner.id,name:owner.name,username:owner.username,role:owner.role}});
+      let domainRegistration;
+      try { domainRegistration=await registerTenantDomain(slug); }
+      catch(error) {
+        console.error('Vercel domain registration failed:',error.message);
+        domainRegistration={error:error.code==='VERCEL_DOMAIN_CONFIG' ? error.message : 'Shop created, but Vercel did not confirm the hostname. Check Vercel project domain settings.'};
+      }
+      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,domainRegistration,user:{id:owner.id,name:owner.name,username:owner.username,role:owner.role}});
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();
