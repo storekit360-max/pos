@@ -67,6 +67,7 @@ A.logout = async () => { await flush(); if (LIVE_WEB) { try { await fetch('/api/
 A.lock = A.logout;
 
 function loginScreen() {
+  if (LIVE_WEB) return liveAuthScreen('login');
   $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p>${LIVE_WEB && cloudLastError ? `<p class="mut" role="alert">${esc(cloudLastError)}</p>` : ''}<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in to existing account</button></form>${!LIVE_WEB ? '<p class="mut" style="margin-top:14px;font-size:13px">This browser has its own local account and data. For the same account on another browser/device, open the deployed HTTPS POS site and sign in there. First set up its shared live shop once; local accounts are not copied to the live site.</p>' : '<p class="mut" style="margin-top:14px;font-size:13px">Use an existing live POS account. Accounts and shop data are shared across browsers on this deployed site.</p>'}</div></div>`;
   $('#lf').onsubmit = async e => { e.preventDefault();
     if (Date.now() < lockUntil) return toast(`Too many attempts. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)}s`, 'err');
@@ -99,13 +100,69 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
     await flush(); if (window.posApi) licenseInfo = await window.posApi.startLicense(); loginScreen(); toast('Setup complete. Your 24-hour trial has started.'); };
 }
 
-function liveSetupScreen() {
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:520px;text-align:left"><h2>Set up live POS</h2><p class="mut">This is a one-time step for the deployed shared shop. Create its first owner account using the private setup secret configured by the site administrator. After setup, all browsers use the existing-account sign-in screen.</p><form id="liveSetup" class="fg"><label class="f full"><span>Setup secret *</span><input name="secret" type="password" required></label><label class="f"><span>Business name *</span><input name="business" required></label><label class="f"><span>Owner name *</span><input name="name" required></label><label class="f"><span>Username *</span><input name="username" required minlength="3"></label><label class="f"><span>Password * (min 10)</span><input name="password" type="password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create owner account</button></form><p class="mut" style="margin-top:14px;font-size:13px">Already set up? Reload the deployed site and sign in with your existing account.</p></div></div>`;
-  $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f=e.target.elements, body={setupSecret:f.secret.value,business:f.business.value.trim(),name:f.name.value.trim(),username:f.username.value.trim().toLowerCase(),password:f.password.value};
-    try { const r=await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)}); await readApiResponse(r, 'Setup failed'); toast('Live shop is ready. Sign in with the owner account.'); loginScreen(); }
-    catch(err){toast(err.message||'Setup failed','err');}
-  };
+let liveSetupRequired = null;
+
+async function liveSignIn(username, password) {
+  const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
+  const result = await readApiResponse(r, 'Sign-in failed');
+  const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
+  cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data;
+  const df = defaults(); db.settings = Object.assign(df.settings, db.settings); for (const k in df) if (!(k in db)) db[k] = df[k]; db.counters = Object.assign(df.counters, db.counters);
+  localStorage.setItem(LS_KEY, JSON.stringify(db));
+  me = result.user; log('login', me.username); await flush(); shell();
 }
+
+function liveAuthScreen(view, opts = {}) {
+  const s = S(), isSetup = view === 'setup';
+  const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
+  const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : '';
+  let panel;
+  if (!isSetup) {
+    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : ''}`;
+  } else if (liveSetupRequired === false) {
+    panel = `<div style="text-align:center;padding:8px 0"><p>The owner account for this shop is already created.</p><p class="mut" style="font-size:13px">Sign in with it. The owner adds staff accounts from inside the app.</p><button type="button" class="btn btn-p btn-lg" data-view="login">Go to sign in</button></div>`;
+  } else {
+    panel = `<form id="liveSetup" class="fg">
+<label class="f full"><span>Setup secret *</span><input name="secret" type="password" autocomplete="off" required></label>
+${[['business', 'Business name *', s.business, true], ['phone', 'Phone', s.phone, false], ['address', 'Address', s.address, false], ['currency', 'Currency symbol', s.currency, false]].map(([k, l, v, req]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"${req ? ' required' : ''}></label>`).join('')}
+<label class="f"><span>Owner name *</span><input name="name" required></label><label class="f"><span>Owner username *</span><input name="username" autocomplete="username" required minlength="3"></label>
+<label class="f"><span>Password * (min 10)</span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Repeat password *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label>
+<button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
+  }
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('setup', 'Create account')}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+
+  document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
+  const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
+  if (opts.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) $('#liveAuthPanel').animate?.([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'ease-out' });
+
+  if (!isSetup) {
+    if (opts.username) { $('#lu').value = opts.username; $('#lp').focus(); } else $('#lu').focus();
+    $('#lf').onsubmit = async e => { e.preventDefault();
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+      try { await liveSignIn($('#lu').value.trim().toLowerCase(), $('#lp').value); }
+      catch (err) { toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
+    };
+  } else if ($('#liveSetup')) {
+    $('#liveSetup').elements.secret.focus();
+    $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f = e.target.elements, btn = e.target.querySelector('button[type=submit]');
+      if (f.password.value !== f.password2.value) return toast('Passwords do not match', 'err');
+      const un = f.username.value.trim().toLowerCase();
+      if (!/^[a-z0-9._-]{3,40}$/.test(un)) return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore', 'err');
+      const body = { setupSecret: f.secret.value, business: f.business.value.trim(), phone: f.phone.value.trim(), address: f.address.value.trim(), currency: f.currency.value.trim(), name: f.name.value.trim(), username: un, password: f.password.value };
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)});
+        await readApiResponse(r, 'Setup failed');
+        liveSetupRequired = false; toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
+      } catch (err) {
+        if (/already complete/i.test(err.message || '')) { liveSetupRequired = false; toast('This shop is already set up. Please sign in.'); liveAuthScreen('login', { animate: true }); return; }
+        toast(err.message || 'Setup failed', 'err'); btn.disabled = false;
+      }
+    };
+  }
+}
+
+function liveSetupScreen() { liveAuthScreen('setup'); }
 
 /* ---- global events ---- */
 document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && A[el.dataset.act]) { e.preventDefault(); try { A[el.dataset.act](el.dataset.id, el, e); } catch (err) { console.error(err); toast('Error: ' + err.message, 'err'); } } });
@@ -132,6 +189,7 @@ document.addEventListener('keydown', e => {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
+    liveSetupRequired = !!setup.setupRequired;
     if (setup.setupRequired) { liveSetupScreen(); window.updateUi?.start(); return; }
     const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await readApiResponse(auth, 'Could not check sign-in status');
     if (signed.authenticated) {
