@@ -18,9 +18,10 @@ module.exports = async (req,res) => {
         if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
         const used=await database.collection('tenants').findOne({slug},{projection:{_id:1}});
         const root=rootDomain(req);
+        const currentHost=String(req.headers.host||'').trim().toLowerCase().replace(/:\d+$/,'');
         // Vercel's shared *.vercel.app hostnames cannot be delegated as wildcard domains.
         const subdomain=root&&!root.endsWith('.vercel.app')?`${slug}.${root}`:null;
-        return json(res,200,{available:!!subdomain&&!used,valid:true,subdomain});
+        return json(res,200,{available:!!subdomain&&!used,valid:true,subdomain,displayDomain:root||currentHost,wildcardSupported:!!subdomain});
       }
       if (new URL(req.url,'https://pos.invalid').searchParams.get('mode') === 'status') {
         if (hostSlug(req) && !hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
