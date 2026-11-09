@@ -64,15 +64,15 @@ module.exports = async (req,res) => {
       const shopName=String(business||'').trim(),slug=String(requestedSlug||'').trim().toLowerCase();
       if (hostSlug(req)) return json(res,400,{error:'Create a shop from the main domain, not a shop subdomain'});
       if (!String(process.env.POS_ROOT_DOMAIN||'').trim()) return json(res,503,{error:'Shop subdomains are not configured yet'});
-      if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter a shop name, available subdomain, owner name, valid username, and password of at least 10 characters'});
-      if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:'That subdomain is already taken'});
+      if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter a business name, available POS address, owner name, valid username, and password of at least 10 characters'});
+      if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:`${slug}.${String(process.env.POS_ROOT_DOMAIN||'').trim().replace(/^https?:\/\//,'').replace(/\/$/,'')} is already taken`});
       const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:String(name).trim(),username:un,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
       const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'Trial',userLimit:5,features:[]},trialEndsAt:new Date(Date.now()+14*86400000),graceDays:7,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
       try {
         await database.collection('tenants').insertOne(tenant);
         await users.insertOne(owner);
         await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business:shopName,phone:'',address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
-      } catch(error) { await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),users.deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]); if(error.code===11000)return json(res,409,{error:'That username or subdomain is already in use'}); throw error; }
+      } catch(error) { await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),users.deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]); if(error.code===11000)return json(res,409,{error:'That username or POS address is already in use'}); throw error; }
       const root=String(process.env.POS_ROOT_DOMAIN||'').trim().replace(/^https?:\/\//,'').replace(/\/$/,'');
       return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:root?`https://${slug}.${root}`:null,user:{id:owner.id,name:owner.name,username:owner.username,role:'owner'}});
     }
