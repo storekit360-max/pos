@@ -20,6 +20,13 @@ async function session(req) {
   const r = await pool.query('SELECT s.id,s.csrf,a.id admin_id,a.email FROM admin_sessions s JOIN super_admins a ON a.id=s.admin_id WHERE s.id=$1 AND s.expires_at>now() AND a.active', [sid]);
   return r.rows[0] || null;
 }
+const MANIFEST_URL = process.env.POS_MANIFEST_URL || 'https://pos360live.vercel.app/updates/latest.json';
+const UUID = /^[0-9a-f-]{36}$/i;
+const csvCell = v => { let t = v == null ? '' : v instanceof Date ? v.toISOString() : typeof v === 'object' ? JSON.stringify(v) : String(v); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return `"${t.replace(/"/g, '""')}"`; };
+const exportSql = { customers:'SELECT * FROM customers ORDER BY created_at DESC', plans:'SELECT * FROM plans ORDER BY name', subscriptions:'SELECT * FROM subscriptions ORDER BY created_at DESC', licenses:'SELECT id,customer_id,subscription_id,key_hint,status,device_limit,expires_at,created_at FROM licenses ORDER BY created_at DESC', activations:'SELECT * FROM activations ORDER BY last_seen DESC', payments:'SELECT * FROM payments ORDER BY created_at DESC', audit:'SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50000' };
+async function verifyPassword(stored, password) { const [salt, expected] = String(stored || '').split('$'); if (!salt || !expected) return false; const a = Buffer.from(await scrypt(String(password || ''), salt), 'hex'), b = Buffer.from(expected, 'hex'); return a.length === b.length && crypto.timingSafeEqual(a, b); }
+// Hourly housekeeping: flip lapsed subscriptions to 'expired' and drop dead sessions. Idempotent.
+async function housekeeping() { try { const r = await pool.query("UPDATE subscriptions SET status='expired' WHERE status='active' AND expires_at<=now() RETURNING id"); if (r.rowCount) await pool.query("INSERT INTO audit_logs(action,entity,metadata) VALUES('subscriptions_auto_expired','subscriptions',$1)", [{ count: r.rowCount }]); await pool.query('DELETE FROM admin_sessions WHERE expires_at<now()'); } catch (e) { console.error('housekeeping failed', e.message); } }
 const allowedTables = { customers: ['full_name','business_name','email','phone','whatsapp','address','country','status','notes'], plans: ['name','duration_days','price','currency','device_limit','grace_days','active','features'] };
 async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -74,6 +81,41 @@ async function handler(req, res) {
     const table = url.pathname.split('/')[2], sql = { customers:'SELECT * FROM customers ORDER BY created_at DESC LIMIT 500', plans:'SELECT * FROM plans ORDER BY name', subscriptions:'SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 500', licenses:'SELECT id,customer_id,subscription_id,key_hint,status,device_limit,expires_at,created_at FROM licenses ORDER BY created_at DESC LIMIT 500', activations:'SELECT * FROM activations ORDER BY last_seen DESC LIMIT 500', payments:'SELECT * FROM payments ORDER BY created_at DESC LIMIT 500', audit:'SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500' }[table];
     return json(res, 200, (await pool.query(sql)).rows);
   }
+  if (req.method === 'GET' && url.pathname === '/api/analytics') {
+    const [rev, soon] = await Promise.all([
+      pool.query("SELECT to_char(date_trunc('month',paid_at),'YYYY-MM') AS month,currency,sum(amount)::numeric(12,2) AS total FROM payments WHERE status='completed' AND paid_at>=date_trunc('month',now())-interval '11 months' GROUP BY 1,2 ORDER BY 1"),
+      pool.query("SELECT s.id,c.business_name,p.name AS plan,s.expires_at FROM subscriptions s JOIN customers c ON c.id=s.customer_id JOIN plans p ON p.id=s.plan_id WHERE s.status='active' AND s.expires_at BETWEEN now() AND now()+interval '30 days' ORDER BY s.expires_at LIMIT 50")]);
+    return json(res, 200, { revenue: rev.rows, expiring: soon.rows });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/releases') { // read-only view of the public update manifest (never edited here)
+    try {
+      const r = await fetch(MANIFEST_URL, { signal: AbortSignal.timeout(8000), headers: { 'cache-control': 'no-cache' } }); if (!r.ok) throw Error(`HTTP ${r.status}`);
+      const m = await r.json(), f = m.ui?.files;
+      return json(res, 200, { url: MANIFEST_URL, version: m.version || null, notes: m.notes || '', platforms: Object.keys(m.platforms || {}), ui: m.ui ? { revision: m.ui.revision, minShell: m.ui.minShell, notes: m.ui.notes, builtAt: m.ui.builtAt, files: Array.isArray(f) ? f.length : Object.keys(f || {}).length } : null });
+    } catch (e) { return json(res, 502, { error: `Could not read the release manifest: ${e.message}` }); }
+  }
+  const ex = url.pathname.match(/^\/api\/export\/(customers|plans|subscriptions|licenses|activations|payments|audit)$/);
+  if (req.method === 'GET' && ex) {
+    const rows = (await pool.query(exportSql[ex[1]])).rows, cols = rows.length ? Object.keys(rows[0]) : [];
+    await audit(s.admin_id, `${ex[1]}_exported`, ex[1], null, req, { rows: rows.length });
+    return json(res, 200, { filename: `${ex[1]}-${new Date().toISOString().slice(0, 10)}.csv`, csv: [cols.map(csvCell).join(','), ...rows.map(r => cols.map(c => csvCell(r[c])).join(','))].join('\r\n') });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/password') {
+    const b = await body(req), cur = await pool.query('SELECT password_hash FROM super_admins WHERE id=$1', [s.admin_id]);
+    if (!(await verifyPassword(cur.rows[0]?.password_hash, b.current))) { await audit(s.admin_id, 'password_change_failed', null, null, req); return json(res, 400, { error: 'Current password is incorrect' }); }
+    if (String(b.next || '').length < 14) return json(res, 400, { error: 'New password must be at least 14 characters' });
+    const salt = crypto.randomBytes(16).toString('hex'), hash = `${salt}$${await scrypt(String(b.next), salt)}`;
+    await pool.query('UPDATE super_admins SET password_hash=$1 WHERE id=$2', [hash, s.admin_id]);
+    await pool.query('DELETE FROM admin_sessions WHERE admin_id=$1 AND id<>$2', [s.admin_id, s.id]); // sign out other devices
+    await audit(s.admin_id, 'password_changed', 'super_admins', s.admin_id, req); return json(res, 200, { ok: true });
+  }
+  const assign = url.pathname.match(/^\/api\/licenses\/([0-9a-f-]{36})\/assign$/i);
+  if (req.method === 'POST' && assign) {
+    const b = await body(req); if (!UUID.test(String(b.customer_id || ''))) return json(res, 400, { error: 'Choose a tenant' });
+    if (b.subscription_id && !UUID.test(String(b.subscription_id))) return json(res, 400, { error: 'Invalid subscription' });
+    const out = await pool.query("UPDATE licenses SET customer_id=$1,subscription_id=$2,status=CASE WHEN status='available' THEN 'assigned' ELSE status END WHERE id=$3 RETURNING id,customer_id,subscription_id,status", [b.customer_id, b.subscription_id || null, assign[1]]);
+    if (!out.rowCount) return json(res, 404, { error: 'Record not found' }); await audit(s.admin_id, 'licenses_assigned', 'licenses', assign[1], req, { customer_id: b.customer_id }); return json(res, 200, out.rows[0]);
+  }
   if (req.method === 'GET' && url.pathname === '/api/options') {
     const [customers, plans] = await Promise.all([pool.query('SELECT id,business_name,full_name FROM customers WHERE status=\'active\' ORDER BY business_name'),pool.query('SELECT id,name,duration_days,price,currency,device_limit FROM plans WHERE active ORDER BY name')]);
     return json(res, 200, {customers:customers.rows,plans:plans.rows});
@@ -111,7 +153,7 @@ async function handler(req, res) {
   }
   const action=url.pathname.match(/^\/api\/(licenses|activations|subscriptions|payments)\/([0-9a-f-]{36})\/(revoke|restore|deactivate|activate|cancel|expire|complete|void)$/i);
   if(req.method==='POST'&&action){const [,entity,id,op]=action;let sql;
-    if(entity==='licenses'&&['revoke','restore'].includes(op))sql=pool.query('UPDATE licenses SET status=$1 WHERE id=$2 RETURNING id,status',[op==='revoke'?'revoked':'available',id]);
+    if(entity==='licenses'&&['revoke','restore'].includes(op))sql=pool.query("UPDATE licenses SET status=CASE WHEN $1='revoke' THEN 'revoked' WHEN customer_id IS NULL THEN 'available' ELSE 'assigned' END WHERE id=$2 RETURNING id,status",[op,id]);
     else if(entity==='activations'&&['deactivate','activate'].includes(op))sql=pool.query('UPDATE activations SET status=$1 WHERE id=$2 RETURNING id,status',[op==='deactivate'?'revoked':'active',id]);
     else if(entity==='subscriptions'&&['cancel','expire','activate'].includes(op))sql=pool.query("UPDATE subscriptions SET status=$1,expires_at=CASE WHEN $1='expired' THEN now() ELSE expires_at END WHERE id=$2 RETURNING id,status,expires_at",[({cancel:'cancelled',expire:'expired',activate:'active'})[op],id]);
     else if(entity==='payments'&&['complete','void'].includes(op))sql=pool.query("UPDATE payments SET status=$1,paid_at=CASE WHEN $1='completed' THEN now() ELSE paid_at END WHERE id=$2 RETURNING id,status",[op==='complete'?'completed':'void',id]);
@@ -135,4 +177,5 @@ async function handler(req, res) {
   }
   return json(res, 404, { error: 'Not found' });
 }
+housekeeping(); setInterval(housekeeping, 3_600_000).unref();
 http.createServer((req,res) => handler(req,res).catch(err => { console.error('admin api error', err.message); if (!res.headersSent) json(res, 500, { error: 'Request failed' }); })).listen(PORT, () => console.log(`Private admin API listening on ${PORT}`));
