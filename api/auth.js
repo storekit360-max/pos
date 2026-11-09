@@ -9,7 +9,8 @@ module.exports = async (req,res) => {
   if (['POST','PUT','DELETE'].includes(req.method) && req.headers.origin) { try { if (new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{error:'Cross-origin request rejected'}); } catch { return json(res,403,{error:'Invalid request origin'}); } }
   try {
     const database = await db(), users = database.collection('users');
-    if (req.method === 'POST' && !['setup','login'].includes(new URL(req.url,'https://pos.invalid').searchParams.get('mode')) && !authorized(req,res)) return;
+    const requestedMode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
+    if (req.method === 'POST' && !['setup','register','login'].includes(requestedMode) && !authorized(req,res)) return;
     if (req.method === 'GET' && req.url.split('?')[0] === '/api/auth') {
       if (new URL(req.url,'https://pos.invalid').searchParams.get('mode') === 'status') {
         const initialized = await database.collection('pos_state').findOne({_id:'main'},{projection:{_id:1}});
@@ -17,8 +18,8 @@ module.exports = async (req,res) => {
         const anyTenant = await tenants.findOne({}, {projection:{_id:1}}), setupRequired=!anyTenant && (await users.countDocuments())===0 && !initialized;
         if (setupRequired) return json(res,200,{setupRequired:true});
         const existing = await users.findOne({},{projection:{_id:1}});
-        if (existing || initialized || anyTenant) { await ensureMain(database); const entitlement=await license(database,'main'),settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.'; return json(res,200,{setupRequired:false,license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining)`: '',announcements:await announcements(database,'main')}}); }
-        return json(res,200,{setupRequired:false});
+        if (existing || initialized || anyTenant) { await ensureMain(database); const entitlement=await license(database,'main'),settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.'; return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining)`: '',announcements:await announcements(database,'main')}}); }
+        return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true'});
       }
       const s = session(req); if (!s) return json(res,200,{ authenticated:false });
       await ensureMain(database);
@@ -45,6 +46,24 @@ module.exports = async (req,res) => {
       if (!init.upsertedCount) { await users.deleteOne({id:owner.id}); return json(res,409,{error:'Live POS setup is already complete'}); }
       await database.collection('tenants').updateOne({_id:'main'},{$setOnInsert:{name:String(business).trim(),slug:'main',status:'active',planSnapshot:{name:'Grandfathered',userLimit:100000,features:[]},graceDays:7,flags:{},createdAt:new Date(),updatedAt:new Date()}},{upsert:true});
       return json(res,201,{ok:true});
+    }
+    if (mode === 'register') {
+      if (process.env.POS_REGISTRATION_OPEN !== 'true') return json(res,403,{error:'New account registration is closed. Ask the shop owner to create your account.'});
+      const { name, username, password } = req.body || {};
+      const un = String(username || '').trim().toLowerCase();
+      if (!String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter your name, a valid username, and a password of at least 10 characters'});
+      const tenant = await database.collection('tenants').findOne({_id:'main',status:{$nin:['suspended','cancelled','deleted']}});
+      if (!tenant || !await users.findOne({tenantId:'main',role:'owner',active:true})) return json(res,409,{error:'This shop is not accepting new accounts. Ask the shop owner for help.'});
+      const entitlement = await license(database,'main');
+      const limit = Number(entitlement.tenant?.planSnapshot?.userLimit || 5);
+      let reservation = await database.collection('tenants').findOneAndUpdate({_id:'main',staffCount:{$lt:limit}},{$inc:{staffCount:1}},{returnDocument:'after'});
+      if (!reservation) { const count=await users.countDocuments({tenantId:'main',active:true}); await database.collection('tenants').updateOne({_id:'main',staffCount:{$exists:false}},{$set:{staffCount:count}}); reservation=await database.collection('tenants').findOneAndUpdate({_id:'main',staffCount:{$lt:limit}},{$inc:{staffCount:1}},{returnDocument:'after'}); }
+      if (!reservation) return json(res,409,{error:'This shop has reached its account limit. Ask the owner for help.'});
+      const account={id:crypto.randomUUID(),tenantId:'main',name:String(name).trim(),username:un,role:'cashier',active:true,hash:await hash(String(password)),createdAt:new Date()};
+      try { await users.insertOne(account); }
+      catch(error) { await database.collection('tenants').updateOne({_id:'main'},{$inc:{staffCount:-1}}); if(error.code===11000)return json(res,409,{error:'That username is already in use'}); throw error; }
+      setSession(res,account.id,'main',0);
+      return json(res,201,{ok:true,user:{id:account.id,name:account.name,username:account.username,role:account.role,active:true}});
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();

@@ -110,7 +110,7 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
     await flush(); if (window.posApi) licenseInfo = await window.posApi.startLicense(); loginScreen(); toast('Setup complete. Your 24-hour trial has started.'); };
 }
 
-let liveSetupRequired = null;
+let liveSetupRequired = null, liveRegistrationOpen = false;
 
 async function liveSignIn(username, password) {
   const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
@@ -123,12 +123,14 @@ async function liveSignIn(username, password) {
 }
 
 function liveAuthScreen(view, opts = {}) {
-  const s = S(), isSetup = view === 'setup';
+  const s = S(), isSetup = view === 'setup', isRegister = view === 'register';
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
   const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : (licenseInfo?.state === 'suspended' || licenseInfo?.state === 'cancelled' || licenseInfo?.state === 'deleted') ? `<p class="mut" role="alert" style="font-size:13px">${esc(licenseInfo.message || 'This shop account is suspended. Contact support.')}</p>` : '';
   let panel;
-  if (!isSetup) {
-    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : ''}`;
+  if (!isSetup && !isRegister) {
+    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : liveRegistrationOpen ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">New to this shop? <a href="#" data-view="register">Create an account</a></p>' : ''}`;
+  } else if (isRegister) {
+    panel = `<form id="liveRegister" class="fg"><p class="mut full" style="margin:0;font-size:13px;text-align:center">Create your staff account for ${esc(s.business || 'this shop')}.</p><label class="f full"><span>Your name *</span><input name="name" autocomplete="name" required></label><label class="f full"><span>Choose a username *</span><input name="username" autocomplete="username" required minlength="3"></label><label class="f"><span>Password * <small>(at least 10 characters)</small></span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Repeat password *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create account</button></form>`;
   } else if (liveSetupRequired === false) {
     panel = `<div style="text-align:center;padding:8px 0"><p>The owner account for this shop is already created.</p><p class="mut" style="font-size:13px">Sign in with it. The owner adds staff accounts from inside the app.</p><button type="button" class="btn btn-p btn-lg" data-view="login">Go to sign in</button></div>`;
   } else {
@@ -140,19 +142,22 @@ function liveAuthScreen(view, opts = {}) {
 <details class="full"><summary class="mut" style="cursor:pointer;font-size:13px">More shop details (optional)</summary><div class="fg" style="margin-top:8px">${[['phone', 'Phone', s.phone], ['currency', 'Currency symbol', s.currency], ['address', 'Address', s.address]].map(([k, l, v]) => `<label class="f ${k === 'address' ? 'full' : ''}"><span>${l}</span><input name="${k}" value="${esc(v)}"></label>`).join('')}</div></details>
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('setup', 'Create account')}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business)}</h2><p class="mut">${esc(s.tagline || '')}</p></div>${alertBox}<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${liveSetupRequired || liveRegistrationOpen ? tab('setup', liveSetupRequired ? 'Create shop' : 'Owner setup') : ''}</div><div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
 
   document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
   const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
   if (opts.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) $('#liveAuthPanel').animate?.([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 200, easing: 'ease-out' });
 
-  if (!isSetup) {
+  if (!isSetup && !isRegister) {
     if (opts.username) { $('#lu').value = opts.username; $('#lp').focus(); } else $('#lu').focus();
     $('#lf').onsubmit = async e => { e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
       try { await liveSignIn($('#lu').value.trim().toLowerCase(), $('#lp').value); }
       catch (err) { toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
     };
+  } else if (isRegister && $('#liveRegister')) {
+    $('#liveRegister').elements.name.focus();
+    $('#liveRegister').onsubmit = async e => { e.preventDefault(); const f=e.target.elements,btn=e.target.querySelector('button[type=submit]'); if(f.password.value!==f.password2.value)return toast('Passwords do not match','err'); const un=f.username.value.trim().toLowerCase(); if(!/^[a-z0-9._-]{3,40}$/.test(un))return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore','err'); btn.disabled=true; try { const r=await fetch('/api/auth?mode=register',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({name:f.name.value.trim(),username:un,password:f.password.value})}); await readApiResponse(r,'Account creation failed'); await liveSignIn(un,f.password.value); } catch(err) { toast(err.message||'Account creation failed','err'); btn.disabled=false; } };
   } else if ($('#liveSetup')) {
     $('#liveSetup').elements.business.focus();
     $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f = e.target.elements, btn = e.target.querySelector('button[type=submit]');
@@ -192,17 +197,23 @@ document.addEventListener('keydown', e => {
 (async function boot() {
   await loadDB();
   if (LIVE_WEB) {
-    let status, setup;
+    let status, setup, signed;
     try {
-      status = await fetch('/api/auth?mode=status',{credentials:'same-origin'});
-      setup = await readApiResponse(status, 'Could not check live account setup');
+      [status, signed] = await Promise.all([
+        fetch('/api/auth?mode=status',{credentials:'same-origin'}),
+        fetch('/api/auth',{credentials:'same-origin'})
+      ]);
+      const responses = await Promise.all([
+        readApiResponse(status, 'Could not check live account setup'),
+        readApiResponse(signed, 'Could not check sign-in status')
+      ]);
+      setup = responses[0]; signed = responses[1];
     } catch (err) {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
-    liveSetupRequired = !!setup.setupRequired; licenseInfo=setup.license||null;
-    if (setup.setupRequired) { liveSetupScreen(); window.updateUi?.start(); return; }
-    const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await readApiResponse(auth, 'Could not check sign-in status'); if(signed.license)licenseInfo=signed.license;
+    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; licenseInfo=signed.license||setup.license||null;
+    if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters);
