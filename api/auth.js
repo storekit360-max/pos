@@ -21,10 +21,8 @@ module.exports = async (req,res) => {
     if (req.method !== 'POST') return json(res,405,{error:'Method not allowed'});
     const mode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
     if (mode === 'setup') {
-      if (!process.env.POS_SETUP_SECRET || req.headers['x-setup-secret'] !== process.env.POS_SETUP_SECRET) return json(res,403,{error:'Setup is not authorized'});
       if (await users.countDocuments() || await database.collection('pos_state').findOne({_id:'main'},{projection:{_id:1}})) return json(res,409,{error:'Live POS setup is already complete'});
-      const { name, username, password, business, setupSecret, phone, address, currency } = req.body || {};
-      if (setupSecret !== process.env.POS_SETUP_SECRET) return json(res,403,{error:'Setup is not authorized'});
+      const { name, username, password, business, phone, address, currency } = req.body || {};
       const un = String(username || '').trim().toLowerCase();
       if (!name || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10 || !business) return json(res,400,{error:'Enter a business name, valid username, and password of at least 10 characters'});
       const owner = {id:crypto.randomUUID(),name:String(name).trim(),username:un,role:'owner',active:true};

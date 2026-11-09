@@ -114,7 +114,6 @@ async function liveSignIn(username, password) {
 
 function liveAuthScreen(view, opts = {}) {
   const s = S(), isSetup = view === 'setup';
-  const linkSecret = (new URLSearchParams(location.hash.replace(/^#/, '')).get('setup') || '').trim();
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
   const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : '';
   let panel;
@@ -125,7 +124,6 @@ function liveAuthScreen(view, opts = {}) {
   } else {
     panel = `<form id="liveSetup" class="fg">
 <p class="mut full" style="margin:0;font-size:13px;text-align:center">Create the owner account for your shop. You only do this once.</p>
-${linkSecret ? '' : '<label class="f full"><span>Setup code * <small>(given to you by the person who installed this POS)</small></span><input name="secret" type="password" autocomplete="off" required></label>'}
 <label class="f full"><span>Shop name *</span><input name="business" value="${esc(s.business)}" required></label>
 <label class="f"><span>Your name *</span><input name="name" autocomplete="name" required></label><label class="f"><span>Choose a username *</span><input name="username" autocomplete="username" required minlength="3"></label>
 <label class="f"><span>Choose a password * <small>(at least 10 characters)</small></span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Type the password again *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label>
@@ -146,20 +144,20 @@ ${linkSecret ? '' : '<label class="f full"><span>Setup code * <small>(given to y
       catch (err) { toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
     };
   } else if ($('#liveSetup')) {
-    ($('#liveSetup').elements.secret || $('#liveSetup').elements.name).focus();
+    $('#liveSetup').elements.business.focus();
     $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f = e.target.elements, btn = e.target.querySelector('button[type=submit]');
       if (f.password.value !== f.password2.value) return toast('Passwords do not match', 'err');
       const un = f.username.value.trim().toLowerCase();
       if (!/^[a-z0-9._-]{3,40}$/.test(un)) return toast('Username must be 3-40 characters: letters, digits, dot, dash or underscore', 'err');
-      const body = { setupSecret: linkSecret || f.secret.value, business: f.business.value.trim(), phone: f.phone.value.trim(), address: f.address.value.trim(), currency: f.currency.value.trim(), name: f.name.value.trim(), username: un, password: f.password.value };
+      const body = { business: f.business.value.trim(), phone: f.phone.value.trim(), address: f.address.value.trim(), currency: f.currency.value.trim(), name: f.name.value.trim(), username: un, password: f.password.value };
       btn.disabled = true;
       try {
-        const r = await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)});
+        const r = await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
         await readApiResponse(r, 'Setup failed');
-        liveSetupRequired = false; if (linkSecret) history.replaceState(null, '', location.pathname + location.search); toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
+        liveSetupRequired = false; toast('Owner account created. Sign in to start.'); liveAuthScreen('login', { animate: true, username: un });
       } catch (err) {
         if (/already complete/i.test(err.message || '')) { liveSetupRequired = false; toast('This shop is already set up. Please sign in.'); liveAuthScreen('login', { animate: true }); return; }
-        toast(/not authorized/i.test(err.message || '') ? 'That setup code is not correct. Please check it and try again.' : (err.message || 'Setup failed'), 'err'); btn.disabled = false;
+        toast(err.message || 'Setup failed', 'err'); btn.disabled = false;
       }
     };
   }
