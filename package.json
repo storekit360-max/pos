@@ -19,6 +19,9 @@
     "electron-builder": "^24.13.3",
     "electron-reload": "^2.0.0-alpha.1"
   },
+  "dependencies": {
+    "mongodb": "^6.12.0"
+  },
   "build": {
     "appId": "lk.thesmart.pos",
     "productName": "The Smart POS",

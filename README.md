@@ -51,7 +51,20 @@ Run `npm run dist:win` or `npm run dist:mac` to build Windows and macOS installe
 
 ## Deploy the browser POS (Vercel)
 
-This repository also deploys the browser interface at the Vercel site root. Vercel copies `renderer/` into `public/` during its build, so `/` serves `renderer/index.html`; the update manifest under `public/updates/` remains available. Set the Vercel project framework preset to **Other** and the project root to this repository, then redeploy after pushing changes.
+This repository also deploys the browser interface at the Vercel site root. Vercel copies `renderer/` into `public/` during its build, so `/` serves `renderer/index.html`; the update manifest under `public/updates/` remains available. In the deployed browser POS, MongoDB provides login and shared data, while localStorage remains the fast local cache and offline sync queue. The installed Electron app remains local and offline-first. Set the Vercel project framework preset to **Other** and the project root to this repository. Configure the required environment variables below before redeploying.
+
+### Live browser POS database setup
+
+Configure these values in Vercel **Project → Settings → Environment Variables** for Production (do not add them to source files):
+
+- `MONGODB_URI`: MongoDB Atlas connection string. Restrict the database user to the POS database and allow network access only as required by Vercel.
+- `MONGODB_DB`: database name, for example `the_smart_pos`.
+- `POS_SESSION_SECRET`: random secret of at least 32 characters, used to sign secure login sessions.
+- `POS_SETUP_SECRET`: one-time setup secret, at least 24 random characters. Keep it private and remove/rotate it after the first owner account is created.
+
+After deployment, open the live site and create the first owner with the setup secret. POS user accounts, login sessions, and shared shop data are stored in MongoDB. Existing localStorage data is not automatically imported; export it as a backup before starting live setup. The browser reads the cloud snapshot after each successful sign-in, saves each change to localStorage immediately, and sends background full-snapshot updates using MongoDB revision checks. All live POS users share one shop in the configured database. MongoDB is required for live sign-in; an already signed-in browser can continue local work offline, then sync automatically when reconnected if the cloud revision has not changed. If two devices edited offline or concurrently, sync stops and preserves the local copy rather than overwriting cloud data; export the local copy before resolving that conflict. An interrupted write is safe to retry. Live staff create, reset-password, enable, and disable actions are owner-only and hashed on the server. Live passwords must be at least 10 characters. Electron remains local-only and retains its current account flow.
+
+Use Vercel environment variables for Production (and Preview too only if you intend to test live accounts there). Set `MONGODB_URI`, `MONGODB_DB`, and `POS_SESSION_SECRET` (at least 32 random characters). Set `POS_SETUP_SECRET` to a separate random value of at least 24 characters for first-owner setup; remove it or rotate it immediately after setup. MongoDB user credentials belong only inside the URI stored in Vercel. Use a database-scoped MongoDB user and allow Vercel network access in Atlas. After saving variables, redeploy the Production deployment. The app creates its required indexes on first API use. Never paste the URI into chat, source files, local `.env` files committed to Git, or browser settings.
 
 The browser version stores its database in that browser's local storage. It is separate from the desktop app's database and does not sync between devices. Use the installed desktop app for the shop's backed-up, shared-on-that-computer data.
 

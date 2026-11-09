@@ -2,6 +2,8 @@
 /* CORE: data, helpers, barcode, printing, UI helpers. Edit freely. */
 const LS_KEY = 'thesmart_pos_v1';
 let db = null, me = null;
+const LIVE_WEB = !window.posApi && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.protocol === 'https:';
+let cloudRevision = 0, cloudSyncTimer = null, cloudSyncBusy = false, cloudLastError = '', cloudBaseData = null, cloudMutationId = '';
 const A = {}, I = {};                    // click actions (data-act) and input handlers (data-in)
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -51,15 +53,57 @@ function defaults() {
 
 /* ---------- persistence ---------- */
 let saveTimer;
-function save() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, 120); }
+function save() { if (LIVE_WEB && me && !cloudMutationId) cloudMutationId = uid(); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 120); }
 async function flush() {
   clearTimeout(saveTimer);
-  try { if (window.posApi) await window.posApi.save(db); else localStorage.setItem(LS_KEY, JSON.stringify(db)); }
+  try {
+    if (window.posApi) await window.posApi.save(db);
+    else {
+      localStorage.setItem(LS_KEY, JSON.stringify(db));
+      if (LIVE_WEB && me) { localStorage.setItem(LS_KEY,JSON.stringify(db)); localStorage.setItem(LS_KEY+':pending',JSON.stringify({revision:cloudRevision,mutationId:cloudMutationId})); if (!cloudBaseData) refreshCloudThenSync(); else queueCloudSync(); }
+    }
+  }
   catch (e) { toast('SAVE FAILED: ' + e.message, 'err'); }
 }
+function queueCloudSync() { clearTimeout(cloudSyncTimer); cloudSyncTimer = setTimeout(syncCloud, 700); }
+async function syncCloud() {
+  if (!LIVE_WEB || !me || cloudSyncBusy || !navigator.onLine) return;
+  cloudSyncBusy = true;
+  try {
+    const local = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (!cloudBaseData || !cloudMutationId || !local) { cloudLastError = 'Cloud baseline is unavailable. Reload while online before syncing changes.'; return; }
+    const r = await fetch('/api/data', {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({data:local,baseRevision:cloudRevision,clientMutationId:cloudMutationId})});
+    const result = await r.json();
+    if (!r.ok) { if (r.status === 409) cloudLastError = 'Cloud data changed in another session. Local edits are preserved on this device; export them before resolving the conflict.'; else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; if (r.status===409) showCloudSyncStatus(); return; }
+    cloudRevision = result.revision; cloudBaseData = JSON.parse(JSON.stringify(local)); cloudMutationId = ''; localStorage.removeItem(LS_KEY + ':pending'); cloudLastError = '';
+  } catch (_) { cloudLastError = 'Offline changes are saved on this device and will sync when reconnected.'; }
+  finally { cloudSyncBusy = false; if (cloudLastError && me && navigator.onLine && !cloudLastError.startsWith('Cloud data changed')) { clearTimeout(cloudSyncTimer); cloudSyncTimer=setTimeout(syncCloud,5000); } }
+}
+window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); });
+async function refreshCloudThenSync() {
+  if (!LIVE_WEB || !me || cloudSyncBusy || !navigator.onLine) return;
+  try {
+    const r = await fetch('/api/data',{credentials:'same-origin'}), response=await r.json();
+    if (r.status === 401) { me=null; loginScreen(); return; }
+    if (!r.ok) throw new Error(response.error || 'Could not refresh cloud data');
+    if (JSON.stringify(response.data) !== JSON.stringify(cloudBaseData)) {
+      const local=JSON.parse(localStorage.getItem(LS_KEY)||'null');
+      if (local && cloudBaseData && JSON.stringify(local) !== JSON.stringify(cloudBaseData)) { cloudLastError='Cloud data changed while this device had unsynced edits. Local copy is preserved; export it before resolving the conflict.'; showCloudSyncStatus(); return; }
+      cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudRevision=response.revision;
+      db=response.data; localStorage.setItem(LS_KEY,JSON.stringify(db));
+    }
+    if (cloudLastError.startsWith('Cloud data changed')) return;
+    queueCloudSync();
+  } catch (_) { cloudLastError='Offline changes remain saved on this device and will sync when reconnected.'; }
+}
+function showCloudSyncStatus() { if (typeof toast === 'function' && cloudLastError) toast(cloudLastError,'err'); }
 async function loadDB() {
   let d = null;
-  try { d = window.posApi ? await window.posApi.load() : JSON.parse(localStorage.getItem(LS_KEY) || 'null'); }
+  try {
+    if (window.posApi) d = await window.posApi.load();
+    else if (LIVE_WEB) { const local = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); if (local) d = local; }
+    else d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+  }
   catch (e) { throw new Error('Local shop data could not be opened. The app has not created or replaced any database files. ' + (e?.message || '')); }
   if (d) { const df = defaults(); d.settings = Object.assign(df.settings, d.settings); for (const k in df) if (!(k in d)) d[k] = df[k]; d.counters = Object.assign(df.counters, d.counters); }
   // Replace the placeholder URL retained by older client profiles.

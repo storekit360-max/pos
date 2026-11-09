@@ -55,13 +55,22 @@ I.gsearch = (v, el) => {
     ov.classList.add('gs'); el.focus(); }, 300);
 };
 A.gsGo = id => { const [pg, q] = id.split('|'); pf.q = q; document.querySelectorAll('.ov').forEach(o => o.remove()); nav(pg); };
-A.logout = () => { me = null; flush(); loginScreen(); };
+A.logout = async () => { await flush(); if (LIVE_WEB) { try { await fetch('/api/auth?mode=logout',{method:'POST',credentials:'same-origin'}); } catch (_) {} } me = null; loginScreen(); };
 A.lock = A.logout;
 
 function loginScreen() {
-  $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p><form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus><input id="lp" type="password" placeholder="Password" autocomplete="current-password"><button class="btn btn-p btn-lg" type="submit">Sign in</button></form></div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p>${LIVE_WEB && cloudLastError ? `<p class="mut">${esc(cloudLastError)}</p>` : ''}<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus><input id="lp" type="password" placeholder="Password" autocomplete="current-password"><button class="btn btn-p btn-lg" type="submit">Sign in</button></form></div></div>`;
   $('#lf').onsubmit = async e => { e.preventDefault();
     if (Date.now() < lockUntil) return toast(`Too many attempts. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)}s`, 'err');
+    if (LIVE_WEB) {
+      try {
+        const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:$('#lu').value.trim().toLowerCase(),password:$('#lp').value})});
+        const result = await r.json(); if (!r.ok) throw Error(result.error || 'Sign-in failed');
+        const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await cloud.json(); if (!cloud.ok) throw Error(response.error || 'Could not load cloud data');
+        cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters); localStorage.setItem(LS_KEY,JSON.stringify(db));
+        me=result.user; log('login',me.username); await flush(); shell(); return;
+      } catch (err) { toast(err.message || 'Live sign-in failed','err'); return; }
+    }
     const u = db.users.find(x => x.username === $('#lu').value.trim().toLowerCase() && x.active), h = u && await hashPw(u.username, $('#lp').value);
     if (u && h === u.hash) { if (!(await refreshLicense())) return; failCount = 0; me = u; log('login', u.username); save(); shell(); }
     else { if (++failCount >= 5) { lockUntil = Date.now() + 30000; failCount = 0; } toast('Invalid username or password', 'err'); } };
@@ -82,6 +91,14 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
     await flush(); if (window.posApi) licenseInfo = await window.posApi.startLicense(); loginScreen(); toast('Setup complete. Your 24-hour trial has started.'); };
 }
 
+function liveSetupScreen() {
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:520px;text-align:left"><h2>Set up live POS</h2><p class="mut">Create the first owner account for this live shop. Use the deployment setup secret supplied by your administrator.</p><form id="liveSetup" class="fg"><label class="f full"><span>Setup secret *</span><input name="secret" type="password" required></label><label class="f"><span>Business name *</span><input name="business" required></label><label class="f"><span>Owner name *</span><input name="name" required></label><label class="f"><span>Username *</span><input name="username" required minlength="3"></label><label class="f"><span>Password * (min 10)</span><input name="password" type="password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create owner account</button></form></div></div>`;
+  $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f=e.target.elements, body={setupSecret:f.secret.value,business:f.business.value.trim(),name:f.name.value.trim(),username:f.username.value.trim().toLowerCase(),password:f.password.value};
+    try { const r=await fetch('/api/auth?mode=setup',{method:'POST',headers:{'Content-Type':'application/json','x-setup-secret':body.setupSecret},credentials:'same-origin',body:JSON.stringify(body)}), result=await r.json(); if(!r.ok)throw Error(result.error||'Setup failed'); toast('Live shop is ready. Sign in with the owner account.'); loginScreen(); }
+    catch(err){toast(err.message||'Setup failed','err');}
+  };
+}
+
 /* ---- global events ---- */
 document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && A[el.dataset.act]) { e.preventDefault(); try { A[el.dataset.act](el.dataset.id, el, e); } catch (err) { console.error(err); toast('Error: ' + err.message, 'err'); } } });
 document.addEventListener('input', e => { const el = e.target.closest('[data-in]'); if (el && I[el.dataset.in]) { try { I[el.dataset.in](el.type === 'checkbox' ? el.checked : el.value, el); } catch (err) { console.error(err); } } });
@@ -98,6 +115,20 @@ document.addEventListener('keydown', e => {
 
 (async function boot() {
   await loadDB();
+  if (LIVE_WEB) {
+    const status = await fetch('/api/auth?mode=status',{credentials:'same-origin'}), setup = await status.json();
+    if (setup.setupRequired) { liveSetupScreen(); window.updateUi?.start(); return; }
+    const auth = await fetch('/api/auth',{credentials:'same-origin'}), signed = await auth.json();
+    if (signed.authenticated) {
+      const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await cloud.json(); if(!cloud.ok)throw Error(response.error||'Could not load cloud data');
+      cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=response.data; const df=defaults(); db.settings=Object.assign(df.settings,db.settings); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters);
+      const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
+      if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();}
+      else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
+      me=signed.user; shell(); if(cloudMutationId)queueCloudSync();
+    } else { db = defaults(); loginScreen(); }
+    window.updateUi?.start(); return;
+  }
   if (!db) { db = defaults(); await flush(); }
   if (window.posApi) { window.posApi.setBackup(cfgForMain()); window.posApi.onBackupError(m => toast('BACKUP FAILED: ' + m, 'err')); }
   applyTheme();
