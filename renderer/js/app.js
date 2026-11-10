@@ -142,20 +142,22 @@ function hideProcessing() { const el = document.getElementById('authProcessing')
 async function openNewTenant(tenantUrl, handoffToken) {
   const target = new URL(tenantUrl);
   target.searchParams.set('handoff', handoffToken);
-  // Domain attachment can precede Vercel edge propagation. Keep the one-time
-  // handoff token here until the destination responds for this tenant.
-  const deadline=Date.now()+90000;
+  // Domain attachment can precede Vercel edge propagation. Poll with backoff
+  // and keep the one-time handoff token until this hostname serves the tenant.
+  const deadline=Date.now()+5*60*1000;
+  let attempt=0;
   while(Date.now()<deadline){
     try {
-      const response=await fetchWithTimeout(`${target.origin}/api/auth?mode=status`,{credentials:'omit',cache:'no-store'},8000);
+      const response=await fetchWithTimeout(`${target.origin}/api/auth?mode=status`,{credentials:'omit',cache:'no-store',redirect:'follow'},10000);
       if(response.ok){
         const status=await response.json();
-        if(status.tenant?.slug===target.hostname.split('.')[0]){location.assign(target.href);return;}
+        if(status.tenant?.slug===target.hostname.split('.')[0]){location.replace(target.href);return;}
       }
     } catch {}
-    await new Promise(resolve=>setTimeout(resolve,2000));
+    const delay=Math.min(1500*Math.pow(1.5,attempt++),10000);
+    await new Promise(resolve=>setTimeout(resolve,delay));
   }
-  throw new Error('Your shop was created, but its web address is still activating. Please wait a few minutes, then open '+target.origin+' or contact support.');
+  throw new Error('Your shop was created, but its web address is still activating. Retry in a few minutes or open '+target.origin+' and sign in with your new account.');
 }
 const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 
