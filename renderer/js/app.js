@@ -221,7 +221,7 @@ async function completeLoginHandoff() {
 }
 
 function startupScreen() {
-  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS360</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">POS360</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p><span class="startup-note">Usually under a few seconds. You can safely retry if it takes longer.</span></div></div>`;
+  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS<span>360</span></span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">POS360</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p><span class="startup-note">Usually under a few seconds. You can safely retry if it takes longer.</span></div></div>`;
 }
 
 async function fetchWithTimeout(input, init = {}, timeoutMs = 12000) {
