@@ -202,7 +202,7 @@ async function completeLoginHandoff() {
   showProcessing('Signing you in…','Opening your shop securely.');
   const r=await fetchWithTimeout('/api/auth?mode=handoff',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({token})});
   await readApiResponse(r,'Sign-in could not be completed');
-  const signed=await fetchWithTimeout('/api/auth?mode=status',{credentials:'same-origin'}), status=await readApiResponse(signed,'Could not load your shop');
+  const signed=await fetchWithTimeout('/api/auth',{credentials:'same-origin',cache:'no-store'}), status=await readApiResponse(signed,'Could not load your shop');
   if(!status.authenticated)throw new Error('Sign-in could not be completed. Please try again.');
   const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud,'Could not load cloud data');
   cloudRevision=response.revision;cloudBaseData=JSON.parse(JSON.stringify(response.data));cloudMutationId='';db=normalizeData(response.data);
