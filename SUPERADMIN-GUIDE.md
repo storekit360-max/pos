@@ -32,6 +32,8 @@ The CLI stores a scrypt password hash and prints only a success message. Open `/
 
 ## Daily operations
 
+- In **Settings**, root superadmins can upload or clear the site favicon and default POS logo. PNG, JPEG, WebP and ICO are accepted where appropriate; each file is limited to 1 MB and stored in the global MongoDB superadmin settings record. The favicon and fallback logo are served on the root POS host and shop subdomains. A shop's own configured business logo takes precedence inside its POS; the global logo fills in when the shop has no logo.
+
 - Review the dashboard for tenant state, revenue, staff count, storage use and recent audit activity.
 - Create a tenant from Tenants. The panel displays a generated owner password once; deliver it using a trusted channel.
 - Tenant detail shows staff and data usage. Use license controls to adjust expiry, and suspend or reactivate with a recorded reason.

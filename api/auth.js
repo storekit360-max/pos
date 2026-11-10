@@ -29,7 +29,7 @@ module.exports = async (req,res) => {
     const rootHost=!!rootDomain(req)&&requestHost===rootDomain(req);
     if (req.method === 'POST' && !['setup','register','login','handoff'].includes(requestedMode) && !authorized(req,res)) return;
     if (req.method === 'GET' && req.url.split('?')[0] === '/api/auth') {
-      if (requestedMode === 'status' && rootHost) return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenantCreationOnly:true});
+      if (requestedMode === 'status' && rootHost) {const siteBrand=(await database.collection('superadmin_settings').findOne({_id:'global'},{projection:{_id:0,siteLogo:1,siteFavicon:1}}))||{};return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenantCreationOnly:true,siteBranding:{logo:siteBrand.siteLogo||'',favicon:siteBrand.siteFavicon||''}});}
       if (requestedMode === 'slug') {
         const slug=String(new URL(req.url,'https://pos.invalid').searchParams.get('value')||'').trim().toLowerCase();
         if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
@@ -53,7 +53,8 @@ module.exports = async (req,res) => {
         if (!anyTenant && !initialized && (await users.countDocuments())===0) return json(res,200,{setupRequired:true});
         if (existing || initialized || (scope==='main' && anyTenant)) {
           const entitlement = await license(database,scope), view = await licenseView(database,scope,entitlement,{publicView:true}), publicSettings = state?.data?.settings||{};
-          return json(res,200,{setupRequired:false,registrationOpen,tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316'}},license:view});
+          const siteBrand=(await database.collection('superadmin_settings').findOne({_id:'global'},{projection:{_id:0,siteLogo:1,siteFavicon:1}}))||{};
+          return json(res,200,{setupRequired:false,registrationOpen,tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316',logo:siteBrand.siteLogo||''}},siteBranding:{favicon:siteBrand.siteFavicon||'',logo:siteBrand.siteLogo||''},license:view});
         }
         return json(res,200,{setupRequired:false,registrationOpen});
       }

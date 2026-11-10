@@ -12,7 +12,7 @@ async function readApiResponse(response, fallback) {
   return body;
 }
 function licenseScreen() {
-  $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2>License required</h2><p class="mut">${licenseInfo?.type === 'trial' ? 'Your 24-hour trial has ended.' : 'Enter a license key to continue using POS.'}</p><form id="licenseForm"><input id="licenseKey" autocomplete="off" placeholder="License key" required><button class="btn btn-p btn-lg" type="submit">Unlock system</button></form></div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card"><img ${effectiveLogo() ? `src="${esc(effectiveLogo())}"` : ''} alt="Business logo"><h2>License required</h2><p class="mut">${licenseInfo?.type === 'trial' ? 'Your 24-hour trial has ended.' : 'Enter a license key to continue using POS.'}</p><form id="licenseForm"><input id="licenseKey" autocomplete="off" placeholder="License key" required><button class="btn btn-p btn-lg" type="submit">Unlock system</button></form></div></div>`;
   $('#licenseForm').onsubmit = async e => { e.preventDefault(); const r = await window.posApi.activateLicense($('#licenseKey').value); if (!r.ok) return toast(r.error, 'err'); licenseInfo = r.status; if (db.users.length) loginScreen(); else setupScreen(); toast(licenseInfo.type === 'permanent' ? 'System permanently unlocked' : licenseInfo.type === 'monthly' ? 'System unlocked for 30 days' : 'System unlocked for 7 days'); };
 }
 async function refreshLicense() {
@@ -37,7 +37,7 @@ function shell() {
   hideProcessing();
   applyTheme();
   document.title = `${S().business || 'POS360'} · POS360`;
-  $('#app').innerHTML = `<div class="shell"><aside class="side"><div class="brand"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><div><b>${esc(S().business)}</b><small>${esc(S().tagline || '')}</small></div></div>
+  $('#app').innerHTML = `<div class="shell"><aside class="side"><div class="brand"><img ${effectiveLogo() ? `src="${esc(effectiveLogo())}"` : ''} alt="Business logo"><div><b>${esc(S().business)}</b><small>${esc(S().tagline || '')}</small></div></div>
 <nav class="nav">${NAV.filter(allowed).map(n => `<a data-act="nav" data-id="${n[0]}"><span>${n[2]}</span> <span>${n[1]}</span></a>`).join('')}</nav>
 <div class="me"><b>${esc(me.name)}</b> (${me.role})<br><button class="btn btn-s" data-act="attendanceSelf" ${attendanceSelfAction() === 'Attendance recorded' ? 'disabled' : ''}>${attendanceSelfAction()}</button><br><a style="cursor:pointer;color:var(--acc)" data-act="logout">Log out</a><br><small style="display:block;margin-top:10px;color:#8b93a3">Developed by ZenStack360</small></div></aside>
 <div class="main"><div id="licenseNotice"></div><div id="announcementNotices"></div><div class="top"><button class="btn btn-p" data-act="nav" data-id="pos">🛒 New Sale</button><input id="gs" placeholder="Global search: product, IMEI, invoice… (Ctrl+K)" style="width:340px" data-in="gsearch"><span class="sp"></span><span class="clock" id="clock"></span><span class="clock" id="activationRemaining" role="status" aria-live="off"></span><button class="btn btn-s" data-act="lock">🔒 Lock</button></div><div class="view" id="view"></div></div></div>`;
@@ -71,9 +71,9 @@ function syncBranding() {
   const brand = document.querySelector('.brand');
   if (brand) {
     const img = brand.querySelector('img'), name = brand.querySelector('b'), tagline = brand.querySelector('small');
-    if (S().logoData) img.src = S().logoData; else img.removeAttribute('src'); name.textContent = S().business || 'POS'; tagline.textContent = S().tagline || '';
+    if (effectiveLogo()) img.src = effectiveLogo(); else img.removeAttribute('src'); name.textContent = S().business || 'POS'; tagline.textContent = S().tagline || '';
   }
-  if (S().customerDisplay && window.posApi) window.posApi.updateCustomerDisplay({ business: S().business, description: S().description, tagline: S().tagline, logo: S().logoData, footer: S().footer, accent: S().accent, currency: S().currency });
+  if (S().customerDisplay && window.posApi) window.posApi.updateCustomerDisplay({ business: S().business, description: S().description, tagline: S().tagline, logo: effectiveLogo(), footer: S().footer, accent: S().accent, currency: S().currency });
 }
 I.gsearch = (v, el) => {
   clearTimeout(I._g); I._g = setTimeout(() => { const q = v.trim().toLowerCase(); if (q.length < 2) return;
@@ -88,7 +88,7 @@ A.lock = A.logout;
 
 function loginScreen() {
   if (LIVE_WEB) return liveAuthScreen('login');
-  $('#app').innerHTML = `<div class="login"><div class="card"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p>${LIVE_WEB && cloudLastError ? `<p class="mut" role="alert">${esc(cloudLastError)}</p>` : ''}<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in to existing account</button></form>${LIVE_WEB ? '<p class="mut" style="margin-top:14px;font-size:13px">Use an existing live POS account. Accounts and shop data are shared across browsers on this deployed site.</p>' : ''}</div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card"><img ${effectiveLogo() ? `src="${esc(effectiveLogo())}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p>${LIVE_WEB && cloudLastError ? `<p class="mut" role="alert">${esc(cloudLastError)}</p>` : ''}<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in to existing account</button></form>${LIVE_WEB ? '<p class="mut" style="margin-top:14px;font-size:13px">Use an existing live POS account. Accounts and shop data are shared across browsers on this deployed site.</p>' : ''}</div></div>`;
   $('#lf').onsubmit = async e => { e.preventDefault();
     if (!startupReady) return toast('Starting POS… please wait a moment.', 'err');
     if (Date.now() < lockUntil) return toast(`Too many attempts. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)}s`, 'err');
@@ -132,7 +132,8 @@ ${[['business', 'Business name', s.business], ['phone', 'Phone', s.phone], ['add
     await flush(); if (window.posApi) licenseInfo = await window.posApi.startLicense(); loginScreen(); toast('Setup complete. Your 24-hour trial has started.'); };
 }
 
-let liveSetupRequired = null, liveRegistrationOpen = false, liveTenant = null;
+let liveSetupRequired = null, liveRegistrationOpen = false, liveTenant = null, liveSiteLogo = '';
+const effectiveLogo = () => S().logoData || liveSiteLogo;
 function applyTenantBranding() {
   if (!liveTenant?.branding || !db?.settings) return;
   const branding = liveTenant.branding;
@@ -260,7 +261,7 @@ function liveAuthScreen(view, opts = {}) {
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
   const tenantHost = isTenantHost(), showAuthTabs = liveRegistrationOpen && !tenantHost && !isSetup;
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(mainDomainLogin?'Welcome back':s.business || liveTenant?.branding?.business || 'POS')}</h2><p class="mut">${esc(mainDomainLogin?'Sign in to your shop POS':s.tagline || liveTenant?.branding?.tagline || '')}</p></div>${alertBox}${showAuthTabs ? `<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('register', 'Create POS')}</div>` : ''}<div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${(s.logoData||liveSiteLogo) ? `src="${esc(s.logoData||liveSiteLogo)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(mainDomainLogin?'Welcome back':s.business || liveTenant?.branding?.business || 'POS')}</h2><p class="mut">${esc(mainDomainLogin?'Sign in to your shop POS':s.tagline || liveTenant?.branding?.tagline || '')}</p></div>${alertBox}${showAuthTabs ? `<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('register', 'Create POS')}</div>` : ''}<div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
 
   document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
   const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
@@ -360,7 +361,8 @@ document.addEventListener('keydown', e => {
       cloudLastError = 'This shop address is not configured. Check the subdomain and try again.';
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
-    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null; window.tenantCreationOnly=!!setup.tenantCreationOnly;
+    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null; liveSiteLogo=setup.siteBranding?.logo||''; window.tenantCreationOnly=!!setup.tenantCreationOnly;
+    const favicon=document.getElementById('site-favicon'); if(favicon&&setup.siteBranding?.favicon)favicon.href=setup.siteBranding.favicon;
     if (setup.tenantCreationOnly) {
       db = normalizeData(defaults()); liveAuthScreen('login'); startupReady = true; window.updateUi?.start(); return;
     }

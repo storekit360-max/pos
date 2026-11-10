@@ -67,6 +67,7 @@
     const staffLink=nav.querySelector('a[href="#/staff"]');if(staffLink)staffLink.hidden=!['root','support'].includes(admin?.role);
     const billingLink=nav.querySelector('a[href="#/billing"]');if(billingLink)billingLink.hidden=!['root','billing','readonly'].includes(admin?.role);
     const licenseLink=nav.querySelector('a[href="#/licenses"]');if(licenseLink)licenseLink.hidden=!['root','billing','readonly'].includes(admin?.role);
+    const settingsLink=nav.querySelector('a[href="#/settings"]');if(settingsLink)settingsLink.hidden=admin?.role!=='root';
   }
   function endSession(message,info=true){
     csrf='';admin=null;pending=null;
@@ -580,6 +581,30 @@
     await refreshAll();
   }
 
+  /* ================= Global settings and site branding ================= */
+  async function settingsPage(){
+    heading('Settings');
+    const c=card('Site logo and favicon');
+    c.append(el('p','These images are shown across the POS site, including pos.zenstack360.com and shop subdomains. Shop owners can still use their own business logo inside the POS.','muted'));
+    let settings;
+    try{settings=(await api('settings.get')).settings||{};}catch(e){c.append(el('p',e.message,'error-text'));return;}
+    const previews=[];
+    const upload=(label,key,accept,hint)=>{
+      const wrapper=el('div',undefined,'field');wrapper.append(el('span',label));
+      const input=el('input');input.type='file';input.accept=accept;input.setAttribute('aria-label',label);
+      const note=el('small',hint);const preview=el('img');preview.alt=`${label} preview`;preview.style.cssText='display:none;max-width:240px;max-height:100px;object-fit:contain;border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:8px;background:#fff';
+      let value=settings[key]||'';const update=()=>{if(value){preview.src=value;preview.style.display='block';}else{preview.removeAttribute('src');preview.style.display='none';}};
+      input.addEventListener('change',()=>{const file=input.files?.[0];if(!file)return;if(!['image/png','image/jpeg','image/webp','image/x-icon','image/vnd.microsoft.icon'].includes(file.type)){toast('Choose a PNG, JPEG, WebP or ICO image',true);input.value='';return;}if(file.size>1024*1024){toast('Image must be 1 MB or smaller',true);input.value='';return;}const reader=new FileReader();reader.onload=()=>{value=String(reader.result||'');update();};reader.onerror=()=>toast('Could not read image',true);reader.readAsDataURL(file);});
+      wrapper.append(input,note,preview);c.append(wrapper);previews.push({key,get:()=>value,update,clear:()=>{value='';input.value='';update();}});update();
+    };
+    upload('Main POS logo','siteLogo','image/png,image/jpeg,image/webp','PNG, JPEG or WebP. Used as the default POS logo when a shop has not set its own. Maximum 1 MB.');
+    upload('Site favicon','siteFavicon','image/png,image/jpeg,image/webp,image/x-icon,image/vnd.microsoft.icon','PNG, JPEG, WebP or ICO. Appears in browser tabs on the root POS domain and tenant subdomains. Maximum 1 MB.');
+    const actions=row();
+    actions.append(btn('Clear logo',()=>{previews[0].clear();}));
+    actions.append(btn('Clear favicon',()=>{previews[1].clear();}));
+    const save=btn('Save settings',()=>busy(save,async()=>{const payload={defaultTrialDays:settings.defaultTrialDays,defaultGraceDays:settings.defaultGraceDays,supportContact:settings.supportContact,siteLogo:previews[0].get(),siteFavicon:previews[1].get()};await api('settings.save',payload);settings=payload;toast('Branding settings saved');}), 'primary');actions.append(save);
+  }
+
   /* ================= Routing ================= */
   async function route(){
     if(!admin){if(authBox.hidden)showLogin();return;}
@@ -592,6 +617,7 @@
         case 'staff':await staffPage();break;
         case 'billing':await billingPage();break;
         case 'licenses':await licensesPage();break;
+        case 'settings':if(admin.role==='root')await settingsPage();else await dashboard();break;
         default:await dashboard();
       }
     }catch(e){if(!e.handled)toast(e.message,true);}
