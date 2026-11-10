@@ -142,8 +142,10 @@ module.exports = async (req,res) => {
       const tokenHash=crypto.createHash('sha256').update(token).digest('hex'),handoffs=database.collection('login_handoffs');
       const handoff=await handoffs.findOneAndDelete({_id:tokenHash,tenantId:hostTenant._id,expiresAt:{$gt:new Date()}});
       if(!handoff)return json(res,401,{error:'Sign-in link has expired. Please enter your details again.'});
-      const user=await users.findOne({id:handoff.userId,tenantId:hostTenant._id,active:true,sessionVersion:handoff.sessionVersion});
-      if(!user)return json(res,401,{error:'Your account changed. Please enter your details again.'});
+      // Older accounts predate sessionVersion and have no field stored. Treat
+      // that as version 0, while still invalidating links after account edits.
+      const user=await users.findOne({id:handoff.userId,tenantId:hostTenant._id,active:true});
+      if(!user || (user.sessionVersion||0)!==(handoff.sessionVersion||0))return json(res,401,{error:'Your account changed. Please enter your details again.'});
       setSession(res,user.id,user.tenantId,user.sessionVersion||0);
       return json(res,200,{ok:true});
     }
