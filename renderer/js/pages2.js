@@ -77,7 +77,20 @@ A.cusCSV = () => download('customers.csv', toCSV([['Name', 'Phone', 'Email', 'Ty
 
 /* ================= EXPENSES ================= */
 let ef = { from: monthStart(), to: ymd() };
-P.expenses = () => { view(`${hdr('Expenses', '<button class="btn" data-act="expCSV">Export CSV</button><button class="btn btn-p" data-act="newExp">+ Add expense</button>')}<div class="filters"><label class="mut">From <input type="date" data-in="efrom" value="${ef.from}"></label><label class="mut">To <input type="date" data-in="eto" value="${ef.to}"></label></div><div id="list"></div>`); drawExp(); };
+P.expenses = () => { view(`${hdr('Expenses', '<button class="btn" data-act="manageExpCats">Expense types</button><button class="btn" data-act="expCSV">Export CSV</button><button class="btn btn-p" data-act="newExp">+ Add expense</button>')}<div class="filters"><label class="mut">From <input type="date" data-in="efrom" value="${ef.from}"></label><label class="mut">To <input type="date" data-in="eto" value="${ef.to}"></label></div><div id="list"></div>`); drawExp(); };
+const cleanExpCats = () => { db.expCats = [...new Set((Array.isArray(db.expCats) ? db.expCats : []).map(c => String(c).trim()).filter(Boolean))]; };
+ A.manageExpCats = () => {
+  cleanExpCats();
+  const draw = () => {
+    const body = `<div class="fg"><label class="f"><span>New expense type</span><input id="newExpCat" maxlength="60" placeholder="e.g. Equipment"></label><button class="btn btn-p" data-add-exp-cat>Add type</button></div><br>` + (db.expCats.length ? tbl(['Expense type', ''], db.expCats.map((c, i) => `<tr><td>${esc(c)}</td><td class="r"><button class="btn btn-s btn-d" data-remove-exp-cat="${i}">Remove</button></td></tr>`)) : '<p class="mut">No expense types yet.</p>');
+    modal('Expense types', body, '<button class="btn" data-close-exp-cats>Done</button>', true);
+    const box = document.querySelector('.modal');
+    box.querySelector('[data-add-exp-cat]').onclick = () => { const input = box.querySelector('#newExpCat'), name = input.value.trim(); if (!name) return toast('Enter an expense type', 'err'); if (db.expCats.some(c => c.toLocaleLowerCase() === name.toLocaleLowerCase())) return toast('That expense type already exists', 'err'); db.expCats.push(name); save(); draw(); };
+    box.querySelectorAll('[data-remove-exp-cat]').forEach(btn => btn.onclick = () => { const category = db.expCats[Number(btn.dataset.removeExpCat)]; if (db.expenses.some(e => e.cat === category && !e.void)) return toast('This type is used by an active expense', 'err'); db.expCats.splice(Number(btn.dataset.removeExpCat), 1); save(); draw(); });
+    box.querySelector('[data-close-exp-cats]').onclick = () => { document.querySelector('.modal')?.remove(); P.expenses(); };
+  };
+  draw();
+};
 const expList = () => db.expenses.filter(e => e.date >= ef.from && e.date <= ef.to).sort((a, b) => b.date.localeCompare(a.date));
 function drawExp() { const l = expList(); $('#list').innerHTML = `<p class="mut">Total: <b>${money(l.filter(e => !e.void).reduce((a, e) => a + e.amount, 0))}</b></p>` + tbl(['Date', 'Category', 'Description', 'Paid to', 'Method', '>Amount', ''], l.map(e => `<tr style="${e.void ? 'opacity:.45;text-decoration:line-through' : ''}"><td>${e.date}</td><td>${esc(e.cat)}</td><td>${esc(e.desc)}</td><td>${esc(e.to || '')}</td><td>${esc(e.method)}</td><td class="r">${money(e.amount)}</td><td class="r">${e.void ? '' : `<button class="btn btn-s btn-d" data-act="voidExp" data-id="${e.id}">Void</button>`}</td></tr>`)); }
 I.efrom = v => { ef.from = v; drawExp(); }; I.eto = v => { ef.to = v; drawExp(); };
