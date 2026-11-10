@@ -6,19 +6,27 @@ module.exports = async (req,res) => {
   const s = authorized(req,res); if (!s) return;
   try {
     const database = await db(); await ensureMain(database);
-    const tid = tenantId(s), users = database.collection('users');
-    const hostTenant=await tenantForRequest(database,req);
+    const tid = tenantId(s), users = database.collection('users'), state = database.collection('pos_state');
+    const isGet = req.method === 'GET', metaOnly = isGet && req.query?.meta === '1';
+    // Independent reads run together instead of one after another. The 2-second
+    // sync poll uses ?meta=1, which now reads only the revision, not the whole shop.
+    const [hostTenant, user, entitlement, doc, userList] = await Promise.all([
+      tenantForRequest(database,req),
+      users.findOne({id:s.userId,tenantId:tid,active:true}),
+      license(database,tid),
+      isGet ? state.findOne({_id:tid}, metaOnly ? {projection:{revision:1,updatedAt:1}} : {}) : null,
+      isGet && !metaOnly ? users.find({tenantId:tid}, {projection:{_id:0,hash:0,tenantId:0}}).toArray() : null
+    ]);
     if (!hostTenant || hostTenant._id !== tid) return json(res,403,{error:'Session does not belong to this shop',code:'TENANT_HOST_MISMATCH'});
-    const entitlement = await license(database,tid);
     if (['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
-    const user = await users.findOne({id:s.userId,tenantId:tid,active:true}); if (!user || (s.sessionVersion||0)!==(user.sessionVersion||0)) return json(res,401,{error:'Please sign in again'});
-    await database.collection('tenants').updateOne({_id:tid},{$set:{lastActiveAt:new Date()}});
-    const state = database.collection('pos_state');
-    if (req.method === 'GET') {
-      const doc = await state.findOne({_id:tid});
+    if (!user || (s.sessionVersion||0)!==(user.sessionVersion||0)) return json(res,401,{error:'Please sign in again'});
+    // lastActiveAt is informational; writing it on every poll was a database write every 2 seconds.
+    const lastActive = hostTenant.lastActiveAt ? new Date(hostTenant.lastActiveAt).getTime() : 0;
+    if (Date.now() - lastActive > 300000) await database.collection('tenants').updateOne({_id:tid},{$set:{lastActiveAt:new Date()}});
+    if (isGet) {
       if (!doc) return json(res,404,{error:'Shop data is not initialized'});
-      if (req.query?.meta === '1') return json(res,200,{revision:doc.revision||0,updatedAt:doc.updatedAt||null});
-      const data = doc.data; data.users = await users.find({tenantId:tid}, {projection:{_id:0,hash:0,tenantId:0}}).toArray();
+      if (metaOnly) return json(res,200,{revision:doc.revision||0,updatedAt:doc.updatedAt||null});
+      const data = doc.data; data.users = userList;
       return json(res,200,{data,revision:doc.revision || 0});
     }
     if (req.method === 'PUT') {

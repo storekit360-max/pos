@@ -86,32 +86,57 @@ async function ensureIndexes(database) {
   }
   if (!indexesPromise) {
     indexesPromise = (async () => {
+      const users = database.collection('users'), tenants = database.collection('tenants');
+      // One cheap listing per collection instead of a drop + create on every
+      // cold start. The one-off migrations below only run when still needed.
+      const listOf = async (collection) => { try { return await collection.indexes(); } catch (cause) { if (cause.codeName === 'NamespaceNotFound' || cause.code === 26) return []; throw cause; } };
+      const [userIndexes, tenantIndexes] = await Promise.all([listOf(users), listOf(tenants)]);
       // Usernames are unique within a shop. Remove the former global constraint
       // so separate tenant subdomains can independently choose the same username.
-      try { await database.collection('users').dropIndex('username_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
-      await database.collection('users').createIndex({ tenantId: 1, username: 1 }, { unique: true });
-      try { await database.collection('tenants').dropIndex('slug_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
-      await database.collection('tenants').createIndex({ slug: 1 }, { unique: true, sparse: true });
-      const optional = [
-        ['pos_state', { updatedAt: -1 }],
-        ['announcements', { tenantIds: 1, active: 1, startsAt: 1, endsAt: 1 }],
-        ['users', { tenantId: 1, active: 1 }], ['users', { id: 1, tenantId: 1 }],
-        ['superadmins', { email: 1 }, { unique: true }],
-        ['superadmin_sessions', { tokenHash: 1 }, { unique: true }], ['superadmin_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
-        ['audit_logs', { ts: -1 }], ['rate_limits', { expiresAt: 1 }, { expireAfterSeconds: 0 }], ['users', { tenantId: 1, createdAt: -1 }], ['tenants', { status: 1, createdAt: -1 }], ['users', { id: 1 }], ['payments', { tenantId: 1, createdAt: -1 }], ['announcements', { active: 1, startsAt: 1, endsAt: 1 }],
-        ['licenseKeys', { keyHash: 1 }, { unique: true }], ['tenant_backups', { tenantId: 1, createdAt: -1 }]
-      ];
-      await Promise.all(optional.map(async ([name, keys, options]) => {
-        try { await database.collection(name).createIndex(keys, options || {}); }
-        catch (cause) { console.error(`Optional ${name} index setup failed:`, cause.message); }
-      }));
+      if (userIndexes.some((i) => i.name === 'username_1')) {
+        try { await users.dropIndex('username_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
+      }
+      if (!userIndexes.some((i) => i.name === 'tenantId_1_username_1' && i.unique)) {
+        await users.createIndex({ tenantId: 1, username: 1 }, { unique: true });
+      }
+      // The slug index must be unique AND sparse. Rebuild only if an older,
+      // non-sparse version is still present.
+      const slugIndex = tenantIndexes.find((i) => i.name === 'slug_1');
+      if (slugIndex && !(slugIndex.unique && slugIndex.sparse)) {
+        try { await tenants.dropIndex('slug_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
+      }
+      if (!slugIndex || !(slugIndex.unique && slugIndex.sparse)) {
+        await tenants.createIndex({ slug: 1 }, { unique: true, sparse: true });
+      }
     })().catch((cause) => {
       indexesPromise = null;
       console.error('POS index setup failed:', cause.message);
       throw cause;
     });
+    // Performance-only indexes never block a request. They are created in the
+    // background once per server instance; createIndex is a no-op if present.
+    indexesPromise.then(() => ensureOptionalIndexes(database)).catch(() => {});
   }
   await indexesPromise;
+}
+
+let optionalIndexesStarted = '';
+function ensureOptionalIndexes(database) {
+  if (optionalIndexesStarted === database.databaseName) return;
+  optionalIndexesStarted = database.databaseName;
+  const optional = [
+      ['pos_state', { updatedAt: -1 }],
+      ['announcements', { tenantIds: 1, active: 1, startsAt: 1, endsAt: 1 }],
+      ['users', { tenantId: 1, active: 1 }], ['users', { id: 1, tenantId: 1 }],
+      ['superadmins', { email: 1 }, { unique: true }],
+      ['superadmin_sessions', { tokenHash: 1 }, { unique: true }], ['superadmin_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+      ['audit_logs', { ts: -1 }], ['rate_limits', { expiresAt: 1 }, { expireAfterSeconds: 0 }], ['users', { tenantId: 1, createdAt: -1 }], ['tenants', { status: 1, createdAt: -1 }], ['users', { id: 1 }], ['payments', { tenantId: 1, createdAt: -1 }], ['announcements', { active: 1, startsAt: 1, endsAt: 1 }],
+      ['licenseKeys', { keyHash: 1 }, { unique: true }], ['tenant_backups', { tenantId: 1, createdAt: -1 }]
+  ];
+  return Promise.all(optional.map(async ([name, keys, options]) => {
+    try { await database.collection(name).createIndex(keys, options || {}); }
+    catch (cause) { console.error(`Optional ${name} index setup failed:`, cause.message); }
+  }));
 }
 
 async function db() {

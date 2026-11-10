@@ -5,6 +5,14 @@ const { json, session, setSession, clearSession, authorized } = require('./_http
 const { hash, verify } = require('./_password');
 const { ensureMain, tenantId, license, announcements, rootDomain, tenantForRequest, hostSlug } = require('./_tenant');
 const { registerTenantDomain } = require('./_vercel-domain');
+// Never send credentials or internal fields to the browser.
+const publicUser = (u) => { const out = { ...u }; delete out._id; delete out.hash; delete out.tenantId; delete out.sessionVersion; return out; };
+// Licence summary shown in the UI. The two lookups are independent, so run them together.
+async function licenseView(database, tid, entitlement) {
+  const [settings, notices] = await Promise.all([database.collection('superadmin_settings').findOne({_id:'global'}), announcements(database,tid)]);
+  const support = settings?.supportContact || 'Contact support to renew.';
+  return {state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'',announcements:notices};
+}
 module.exports = async (req,res) => {
   res.setHeader('Cache-Control','no-store');
   if (['POST','PUT','DELETE'].includes(req.method) && req.headers.origin) { try { if (new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{error:'Cross-origin request rejected'}); } catch { return json(res,403,{error:'Invalid request origin'}); } }
@@ -27,16 +35,22 @@ module.exports = async (req,res) => {
         const subdomain=root&&!root.endsWith('.vercel.app')?`${slug}.${root}`:null;
         return json(res,200,{available:!!subdomain&&!used,valid:true,subdomain,displayDomain:root||currentHost,wildcardSupported:!!subdomain});
       }
-      if (new URL(req.url,'https://pos.invalid').searchParams.get('mode') === 'status') {
+      if (requestedMode === 'status') {
         if (hostSlug(req) && !hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
-        const scope = hostTenant?._id || 'main';
-        const initialized = await database.collection('pos_state').findOne({_id:scope},{projection:{_id:1}});
-        const tenants = database.collection('tenants');
-        const anyTenant = await tenants.findOne({}, {projection:{_id:1}}), setupRequired=!anyTenant && (await users.countDocuments())===0 && !initialized;
-        if (setupRequired) return json(res,200,{setupRequired:true});
-        const existing = await users.findOne({tenantId:scope},{projection:{_id:1}});
-        if (existing || initialized || (scope==='main' && anyTenant)) { const entitlement=await license(database,scope),settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.',state=await database.collection('pos_state').findOne({_id:scope},{projection:{'data.settings.business':1,'data.settings.tagline':1,'data.settings.accent':1}}),publicSettings=state?.data?.settings||{}; return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316'}},license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining)`: '',announcements:await announcements(database,scope)}}); }
-        return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true'});
+        const scope = hostTenant?._id || 'main', registrationOpen = process.env.POS_REGISTRATION_OPEN === 'true';
+        // These three reads are independent; running them together removes two sequential database round trips.
+        const [state, anyTenant, existing] = await Promise.all([
+          database.collection('pos_state').findOne({_id:scope},{projection:{_id:1,'data.settings.business':1,'data.settings.tagline':1,'data.settings.accent':1}}),
+          database.collection('tenants').findOne({}, {projection:{_id:1}}),
+          users.findOne({tenantId:scope},{projection:{_id:1}})
+        ]);
+        const initialized = !!state;
+        if (!anyTenant && !initialized && (await users.countDocuments())===0) return json(res,200,{setupRequired:true});
+        if (existing || initialized || (scope==='main' && anyTenant)) {
+          const entitlement = await license(database,scope), view = await licenseView(database,scope,entitlement), publicSettings = state?.data?.settings||{};
+          return json(res,200,{setupRequired:false,registrationOpen,tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316'}},license:view});
+        }
+        return json(res,200,{setupRequired:false,registrationOpen});
       }
       const s = session(req); if (!s) return json(res,200,{ authenticated:false });
       if (rootHost) return json(res,200,{authenticated:false,user:null});
@@ -44,11 +58,10 @@ module.exports = async (req,res) => {
       const tid = tenantId(s);
       if (!hostTenant || hostTenant._id !== tid) return json(res,200,{authenticated:false,user:null});
       const fullUser = await users.findOne({ id:s.userId, tenantId:tid, active:true });
-      const user = fullUser && (s.sessionVersion||0)===(fullUser.sessionVersion||0) ? await users.findOne({id:s.userId,tenantId:tid,active:true},{projection:{_id:0,hash:0,tenantId:0,sessionVersion:0}}) : null;
+      const user = fullUser && (s.sessionVersion||0)===(fullUser.sessionVersion||0) ? publicUser(fullUser) : null;
       const entitlement = user ? await license(database, tid) : null;
       if (entitlement && ['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,200,{authenticated:false,user:null,license:{state:entitlement.state,message:'This shop account is suspended. Contact support.'}});
-      const settings=entitlement?await database.collection('superadmin_settings').findOne({_id:'global'}):null,support=settings?.supportContact||'Contact support to renew.';
-      return json(res,200,{ authenticated:!!user, user:user || null, ...(entitlement ? {license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'' ,announcements:await announcements(database,tid)}} : {}) });
+      return json(res,200,{ authenticated:!!user, user:user || null, ...(entitlement ? {license:await licenseView(database,tid,entitlement)} : {}) });
     }
     if (req.method !== 'POST') return json(res,405,{error:'Method not allowed'});
     const mode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
@@ -146,8 +159,11 @@ module.exports = async (req,res) => {
       // that as version 0, while still invalidating links after account edits.
       const user=await users.findOne({id:handoff.userId,tenantId:hostTenant._id,active:true});
       if(!user || (user.sessionVersion||0)!==(handoff.sessionVersion||0))return json(res,401,{error:'Your account changed. Please enter your details again.'});
+      const entitlement=await license(database,user.tenantId);
+      if(['suspended','cancelled','deleted'].includes(entitlement.state))return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
       setSession(res,user.id,user.tenantId,user.sessionVersion||0);
-      return json(res,200,{ok:true});
+      // Return the signed-in user and licence now so the browser does not need an extra status call before loading shop data.
+      return json(res,200,{ok:true,user:publicUser(user),license:await licenseView(database,user.tenantId,entitlement)});
     }
     if (mode === 'staff') {
       const s = session(req);

@@ -1,7 +1,19 @@
 'use strict';
 const crypto = require('node:crypto');
 
-async function ensureMain(database) {
+// The legacy-user/main-tenant repair below is idempotent, so it only needs to
+// run once per server instance (re-checked every 5 minutes), not on every request.
+let mainReady = null, mainReadyAt = 0, mainReadyDb = '';
+function ensureMain(database) {
+  const fresh = mainReady && mainReadyDb === database.databaseName && Date.now() - mainReadyAt < 300000;
+  if (fresh) return mainReady;
+  const attempt = ensureMainNow(database);
+  mainReady = attempt; mainReadyAt = Date.now(); mainReadyDb = database.databaseName;
+  attempt.catch(() => { if (mainReady === attempt) mainReady = null; });
+  return attempt;
+}
+
+async function ensureMainNow(database) {
   const now = new Date();
   await database.collection('users').updateMany({ tenantId: { $exists: false } }, { $set: { tenantId: 'main' } });
   const staffCount = await database.collection('users').countDocuments({ tenantId: 'main', active: true });
