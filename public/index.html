@@ -5,18 +5,33 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; script-src 'self'; font-src 'self' data:">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POS</title>
-<script src="js/theme-boot.js"></script>
+<script>
+// Apply the last known shop theme before the stylesheet paints. The cache is
+// only a presentation hint; authenticated cloud data remains authoritative.
+(() => {
+  let accent = '#f97316', dark = false;
+  try {
+    const tenant = location.hostname.split('.')[0] || 'main';
+    const cached = JSON.parse(localStorage.getItem(`thesmart_pos_theme:${tenant}`) || 'null');
+    if (cached && /^#[0-9a-f]{6}$/i.test(cached.accent || '')) accent = cached.accent;
+    dark = !!cached?.dark;
+  } catch (_) {}
+  document.documentElement.style.setProperty('--acc', accent);
+  document.documentElement.style.setProperty('--acc2', accent);
+  if (dark) document.documentElement.classList.add('dark');
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app"><div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">THE SMART POS</p><h2 style="margin:4px 0">Starting POS</h2><p class="mut">Loading your workspace…</p></div></div></div>
+<div id="app"></div>
 <div id="toasts"></div>
 <script src="js/diagnostics.js"></script>
 <script src="js/core.js"></script>
+<script src="js/qfonts.js"></script>
 <script src="js/pages.js"></script>
 <script src="js/pages2.js"></script>
 <script src="js/updater-ui.js"></script>
 <script src="js/app.js"></script>
-<script src="js/qfonts.js" async></script>
 </body>
 </html>

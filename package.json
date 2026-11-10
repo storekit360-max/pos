@@ -8,6 +8,8 @@
     "license:setup": "node scripts/setup-desktop-license.js",
     "license:prepare": "npm run license:setup && node scripts/sync-desktop-license-key.js",
     "seed:superadmin": "node scripts/seed-superadmin.js",
+    "tenant:delete": "node scripts/delete-tenant.js",
+    "tenants:delete-all": "node scripts/delete-all-tenants.js",
     "dist:win": "npm run license:prepare && electron-builder --win nsis --x64 && node scripts/prepare-client.js win",
     "dist:mac": "npm run license:prepare && electron-builder --mac dmg --arm64 && electron-builder --mac dmg --x64 && node scripts/prepare-client.js mac",
     "dist:mac:x64": "npm run license:prepare && electron-builder --mac dmg --x64 && node scripts/prepare-client.js mac-x64",

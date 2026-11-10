@@ -316,12 +316,12 @@ A.hist = id => { const p = prod(id);
   modal('Stock history – ' + p.name, tbl(['Date', 'Type', '>Qty', 'Ref', 'Note', 'User'], db.moves.filter(m => m.pid === id).slice(0, 200).map(m => `<tr><td>${dt(m.at)}</td><td>${m.type}</td><td class="r">${m.qty}</td><td>${esc(m.ref)}</td><td>${esc(m.note)}</td><td>${esc(m.user)}</td></tr>`)), '', true); };
 A.manageLists = () => {
   const box = (key, title) => `<div><b>${title}</b><div class="filters" style="margin:6px 0"><input id="add_${key}" placeholder="Add new…"><button class="btn btn-p btn-s" data-act="addList" data-id="${key}">Add</button></div>${db[key].map((x, i) => `<div class="tot" style="gap:8px"><span>${esc(x)}</span><span class="sp"></span><button class="btn btn-s" data-act="editList" data-id="${key}|${i}">Edit</button><button class="btn btn-s btn-d" data-act="delList" data-id="${key}|${i}">Remove</button></div>`).join('') || '<div class="mut">No entries yet</div>'}</div>`;
-  modal('Categories, Brands & Expense categories', `<div class="fg"><div class="full">${box('categories', 'Categories')}</div><div class="full">${box('brands', 'Brands')}</div><div class="full">${box('expCats', 'Expense categories')}</div></div>`, '', true);
+  modal('Product categories & brands', `<div class="fg"><div class="full">${box('categories', 'Product categories')}</div><div class="full">${box('brands', 'Brands')}</div></div>`, '', true);
 };
 A.addList = k => { const input = $('#add_' + k), v = input.value.trim(); if (!v) return; if (db[k].some(x => x.toLowerCase() === v.toLowerCase())) return toast(`${v} already exists`, 'err'); db[k].push(v); save(); closeTop(); A.manageLists(); };
 A.editList = id => {
   const [k, rawIndex] = id.split('|'), index = Number(rawIndex), old = db[k]?.[index]; if (old == null) return;
-  formModal(`Edit ${k === 'categories' ? 'category' : k === 'brands' ? 'brand' : 'expense category'}`, [{ k: 'name', l: 'Name', v: old, req: 1 }], ({ name }) => {
+  formModal(`Edit ${k === 'categories' ? 'category' : 'brand'}`, [{ k: 'name', l: 'Name', v: old, req: 1 }], ({ name }) => {
     if (db[k].some((x, i) => i !== index && x.toLowerCase() === name.toLowerCase())) return `${name} already exists`;
     db[k][index] = name;
     const productField = k === 'categories' ? 'category' : k === 'brands' ? 'brand' : null;

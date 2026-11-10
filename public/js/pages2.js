@@ -77,11 +77,58 @@ A.cusCSV = () => download('customers.csv', toCSV([['Name', 'Phone', 'Email', 'Ty
 
 /* ================= EXPENSES ================= */
 let ef = { from: monthStart(), to: ymd() };
-P.expenses = () => { view(`${hdr('Expenses', '<button class="btn" data-act="expCSV">Export CSV</button><button class="btn btn-p" data-act="newExp">+ Add expense</button>')}<div class="filters"><label class="mut">From <input type="date" data-in="efrom" value="${ef.from}"></label><label class="mut">To <input type="date" data-in="eto" value="${ef.to}"></label></div><div id="list"></div>`); drawExp(); };
+P.expenses = () => { view(`${hdr('Expenses', '<button class="btn" data-act="manageExpCats">Expense types</button><button class="btn" data-act="expCSV">Export CSV</button><button class="btn btn-p" data-act="newExp">+ Add expense</button>')}<div class="filters"><label class="mut">From <input type="date" data-in="efrom" value="${ef.from}"></label><label class="mut">To <input type="date" data-in="eto" value="${ef.to}"></label></div><div id="list"></div>`); drawExp(); };
+const cleanExpCats = () => { db.expCats = [...new Set((Array.isArray(db.expCats) ? db.expCats : []).map(c => String(c).trim()).filter(Boolean))]; };
+ A.manageExpCats = () => {
+  cleanExpCats();
+  const draw = () => {
+    const body = `<div class="fg"><label class="f"><span>New expense type</span><input id="newExpCat" maxlength="60" placeholder="e.g. Equipment"></label><button class="btn btn-p" data-add-exp-cat>Add type</button></div><br>` + (db.expCats.length ? tbl(['Expense type', ''], db.expCats.map((c, i) => `<tr><td>${esc(c)}</td><td class="r"><button class="btn btn-s btn-d" data-remove-exp-cat="${i}">Remove</button></td></tr>`)) : '<p class="mut">No expense types yet.</p>');
+    modal('Expense types', body, '<button class="btn" data-close-exp-cats>Done</button>', true);
+    const box = document.querySelector('.modal');
+    box.querySelector('[data-add-exp-cat]').onclick = () => { const input = box.querySelector('#newExpCat'), name = input.value.trim(); if (!name) return toast('Enter an expense type', 'err'); if (db.expCats.some(c => c.toLocaleLowerCase() === name.toLocaleLowerCase())) return toast('That expense type already exists', 'err'); db.expCats.push(name); save(); draw(); };
+    box.querySelectorAll('[data-remove-exp-cat]').forEach(btn => btn.onclick = () => { const category = db.expCats[Number(btn.dataset.removeExpCat)]; if (db.expenses.some(e => e.cat === category && !e.void)) return toast('This type is used by an active expense', 'err'); db.expCats.splice(Number(btn.dataset.removeExpCat), 1); save(); draw(); });
+    box.querySelector('[data-close-exp-cats]').onclick = () => { document.querySelector('.modal')?.remove(); P.expenses(); };
+  };
+  draw();
+};
 const expList = () => db.expenses.filter(e => e.date >= ef.from && e.date <= ef.to).sort((a, b) => b.date.localeCompare(a.date));
 function drawExp() { const l = expList(); $('#list').innerHTML = `<p class="mut">Total: <b>${money(l.filter(e => !e.void).reduce((a, e) => a + e.amount, 0))}</b></p>` + tbl(['Date', 'Category', 'Description', 'Paid to', 'Method', '>Amount', ''], l.map(e => `<tr style="${e.void ? 'opacity:.45;text-decoration:line-through' : ''}"><td>${e.date}</td><td>${esc(e.cat)}</td><td>${esc(e.desc)}</td><td>${esc(e.to || '')}</td><td>${esc(e.method)}</td><td class="r">${money(e.amount)}</td><td class="r">${e.void ? '' : `<button class="btn btn-s btn-d" data-act="voidExp" data-id="${e.id}">Void</button>`}</td></tr>`)); }
 I.efrom = v => { ef.from = v; drawExp(); }; I.eto = v => { ef.to = v; drawExp(); };
-A.newExp = () => formModal('Add expense', [{ k: 'date', l: 'Date', t: 'date', v: ymd() }, { k: 'cat', l: 'Category', t: 'select', o: db.expCats }, { k: 'desc', l: 'Description', cls: 'full' }, { k: 'amount', l: 'Amount', t: 'number', req: 1 }, { k: 'method', l: 'Paid by', t: 'select', o: methods() }, { k: 'to', l: 'Paid to' }, { k: 'ref', l: 'Reference no.' }], v => { if (v.amount <= 0) return 'Invalid amount'; db.expenses.push({ id: uid(), ...v, user: me.name, at: nowISO() }); log('expense', v.cat + ' ' + v.amount); save(); P.expenses(); }, 'Add');
+A.newExp = () => {
+  const ov = formModal('Add expense', [
+    { k: 'date', l: 'Date', t: 'date', v: ymd() },
+    { k: 'cat', l: 'Expense category', t: 'select', o: [['', 'Select a category'], ...db.expCats], req: 1 },
+    { k: 'desc', l: 'Description', cls: 'full' },
+    { k: 'amount', l: 'Amount', t: 'number', req: 1 },
+    { k: 'method', l: 'Paid by', t: 'select', o: methods() },
+    { k: 'to', l: 'Paid to' }, { k: 'ref', l: 'Reference no.' }
+  ], v => {
+    if (!v.cat || !db.expCats.includes(v.cat)) return 'Select a valid expense category';
+    if (v.amount <= 0) return 'Invalid amount';
+    const items = [...ov.querySelectorAll('[data-exp-item]')].map(row => ({
+      name: row.querySelector('[data-item-name]').value.trim(),
+      qty: num(row.querySelector('[data-item-qty]').value),
+      amount: num(row.querySelector('[data-item-amount]').value)
+    })).filter(item => item.name || item.qty || item.amount);
+    if (items.some(item => !item.name || item.qty <= 0 || item.amount <= 0)) return 'Complete each expense item with a name, quantity and amount';
+    const itemsTotal = r2(items.reduce((sum, item) => sum + item.qty * item.amount, 0));
+    if (items.length && Math.abs(itemsTotal - v.amount) > 0.01) return 'Expense item total must match the expense amount';
+    db.expenses.push({ id: uid(), ...v, items, user: me.name, at: nowISO() });
+    log('expense', v.cat + ' ' + v.amount); save(); P.expenses();
+  }, 'Add', true);
+  const form = ov.querySelector('form');
+  const itemBox = document.createElement('section');
+  itemBox.className = 'full';
+  itemBox.innerHTML = `<div class="tot"><b>Expense items (optional)</b><span class="sp"></span><button type="button" class="btn btn-s" data-add-exp-item>Add item</button></div><p class="mut sm">Add line items for a breakdown. Their total must match the expense amount.</p><div data-exp-items></div>`;
+  form.append(itemBox);
+  ov.querySelector('[data-add-exp-item]').addEventListener('click', () => {
+    const row = document.createElement('div'); row.dataset.expItem = '';
+    row.className = 'fg'; row.style.cssText = 'grid-template-columns:minmax(0,2fr) minmax(80px,1fr) minmax(100px,1fr) auto;margin:8px 0';
+    row.innerHTML = `<label class="f"><span>Item</span><input data-item-name maxlength="120" placeholder="Expense item"></label><label class="f"><span>Qty</span><input data-item-qty type="number" min="0.01" step="any" value="1"></label><label class="f"><span>Unit amount</span><input data-item-amount type="number" min="0.01" step="any" placeholder="0.00"></label><button type="button" class="btn btn-s btn-d" aria-label="Remove item">Remove</button>`;
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    ov.querySelector('[data-exp-items]').append(row); row.querySelector('[data-item-name]').focus();
+  });
+};
 A.voidExp = async id => { if (!(await confirmDlg('Void this expense?'))) return; const e = db.expenses.find(x => x.id === id); e.void = true; log('expense void', e.desc + ' ' + e.amount); save(); drawExp(); };
 A.expCSV = () => download('expenses.csv', toCSV([['Date', 'Category', 'Description', 'Paid to', 'Method', 'Amount', 'Void'], ...expList().map(e => [e.date, e.cat, e.desc, e.to, e.method, e.amount, e.void ? 'yes' : ''])]));
 

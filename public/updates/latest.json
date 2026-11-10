@@ -3,10 +3,10 @@
   "notes": "VAT and related POS updates. Download is available after the matching platform installer is published.",
   "platforms": {},
   "ui": {
-    "revision": "1e072a414daa",
+    "revision": "c9b3b42e6270",
     "minShell": "1.4.2",
     "notes": "Improvements and fixes.",
-    "builtAt": "2026-11-09T11:46:18.087Z",
+    "builtAt": "2026-11-10T05:48:04.430Z",
     "files": [
       {
         "path": "customer-display.html",
@@ -15,18 +15,18 @@
       },
       {
         "path": "index.html",
-        "sha256": "3ffad5bd24058954d4539bfb861856606652389d37e34d37f4c96191cdcea18f",
-        "size": 706
+        "sha256": "0c9527f968149afa3608c0a62a81523405e56a847bdbf6da3e46ec00e4858e43",
+        "size": 1419
       },
       {
         "path": "js/app.js",
-        "sha256": "2c6d25e02b93e27b986cc6c3eb4d3b0aa77bf714ae6afbbdb566445de7d1845c",
-        "size": 24652
+        "sha256": "83be2ffb05c9f3fc93304cba5ba090da94d8199a382233d4c59853712cc5840e",
+        "size": 41273
       },
       {
         "path": "js/core.js",
-        "sha256": "5479f0c2c6ac144e8da8613637d4cb552e2da3477e493fc0d4a818c299e18955",
-        "size": 27346
+        "sha256": "f6dbd3c59e5cf2be77cfd629b4946ea5e680af6e83ca193bf29f214db4e71770",
+        "size": 32817
       },
       {
         "path": "js/diagnostics.js",
@@ -35,18 +35,23 @@
       },
       {
         "path": "js/pages.js",
-        "sha256": "a730ff4140bd9de39e15df33fe06be3a48db5995f1d28086a46db8663e20b777",
-        "size": 54484
+        "sha256": "cccdfcfbfbd01c145f6b5d497c6d26cfee30b55545ff5445f33007b194537e18",
+        "size": 54380
       },
       {
         "path": "js/pages2.js",
-        "sha256": "d9e7fe91439497b45ea9700020a0954b7ccd04e9483b1245491d82abc74b9b2c",
-        "size": 115995
+        "sha256": "6addf93b41e86684563cd940bc8414fbde3fd7cd05aa7ee75ffd91b53994153b",
+        "size": 120030
       },
       {
         "path": "js/qfonts.js",
         "sha256": "d34cad82c0ce78cdbf7e3cf89db254f14e5ae8cacb37c66732229a040fc162b2",
         "size": 113126
+      },
+      {
+        "path": "js/theme-boot.js",
+        "sha256": "61961b37829c66a07a7af49d67b7336f52748fe0b557cd376b90ae72aa85166b",
+        "size": 706
       },
       {
         "path": "js/updater-ui.js",
@@ -60,8 +65,8 @@
       },
       {
         "path": "style.css",
-        "sha256": "e3724e9e28b725e598ceb8bfdec8fcca6b20f4acdbf79e03e12cdb28c023a0d4",
-        "size": 13897
+        "sha256": "1a44c4e1fbf53cea522381eaac0f1aa9d99cbafeeac7761624a9b5613a3cec98",
+        "size": 16852
       }
     ]
   }

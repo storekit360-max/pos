@@ -27,7 +27,7 @@ async function payments(database,q){
  const ids=[...new Set(items.map(p=>p.tenantId))],names=new Map((await database.collection('tenants').find({_id:{$in:ids}},{projection:{name:1}}).toArray()).map(t=>[t._id,t.name]));
  return {items:items.map(p=>({...p,tenantName:names.get(p.tenantId)||p.tenantId})),page,limit,total};
 }
-// Super admin confirms a bank payment: records it and activates the next 30-day cycle(s).
+// Super admin confirms a payment: records it and activates the chosen number of days.
 async function activate(database,actor,req,b){
  const id=String(b.tenantId||'');if(!idOk(id))throw bad('Invalid shop');
  const method=['cash','bank transfer','card','other'].includes(String(b.method||'').toLowerCase())?String(b.method).toLowerCase():'bank transfer',reference=String(b.reference||'').trim().slice(0,120),fromToday=b.from==='today';
@@ -40,18 +40,17 @@ async function activate(database,actor,req,b){
   if(['deleted','cancelled'].includes(tenant.status))throw bad(`A ${tenant.status} shop cannot be activated. Restore it first.`,409,'CONFLICT');
   if(tenant.billing?.exempt)throw bad('This shop is exempt from billing. Turn the exemption off first.',409,'CONFLICT');
   const now=Date.now(),due=Billing.dueAt(tenant),overdue=Billing.overdueCycles(due,now),fee=Billing.feeFor(tenant,settings);
-  const cycles=Math.floor(Number(b.cycles)||Math.max(1,overdue));
-  if(cycles<1||cycles>24)throw bad('Cycles must be between 1 and 24');
-  if(cycles<overdue)throw bad(`This shop is ${overdue} cycles overdue. Activate at least ${overdue} cycles so the POS unlocks.`,409,'CONFLICT');
-  const amount=b.amount===undefined||b.amount===''||b.amount===null?fee*cycles:Number(b.amount);
+  const rawDays=Number(b.days),days=Math.floor(Number.isFinite(rawDays)&&rawDays>0?rawDays:(Number(b.cycles)>0?Number(b.cycles)*Billing.CYCLE_DAYS:Billing.CYCLE_DAYS));
+  if(days<1||days>3650)throw bad('Activation period must be between 1 and 3650 days');
+  const amount=b.amount===undefined||b.amount===''||b.amount===null?fee*days/Billing.CYCLE_DAYS:Number(b.amount);
   if(!Number.isFinite(amount)||amount<=0||amount>1000000000)throw bad('Enter the amount received');
-  // Default keeps the billing day (creation date + N x 30 days). "today" counts 30 days from now instead.
-  const base=fromToday?new Date(Math.max(now,due?due.getTime():0)):(due||new Date(now)),expiresAt=new Date(base.getTime()+cycles*Billing.CYCLE_DAYS*Billing.DAY);
-  const payment={_id:crypto.randomUUID(),tenantId:id,kind:'subscription',amount,currency:settings.currency||'LKR',method,reference,cycles,periodStart:base,periodEnd:expiresAt,recordedBy:actor.id,createdAt:new Date(),voidedAt:null};
+  // Default starts at the current due date; "today" starts a fresh period now.
+  const base=fromToday?new Date(Math.max(now,due?due.getTime():0)):(due||new Date(now)),expiresAt=new Date(base.getTime()+days*Billing.DAY);
+  const payment={_id:crypto.randomUUID(),tenantId:id,kind:'subscription',amount,currency:settings.currency||'LKR',days,cycles:days/Billing.CYCLE_DAYS,method,reference,periodStart:base,periodEnd:expiresAt,recordedBy:actor.id,createdAt:new Date(),voidedAt:null};
   await database.collection('payments').insertOne(payment,{session});
   const changed=await database.collection('tenants').updateOne({_id:id},{$set:{expiresAt,status:'active',updatedAt:new Date(),'billing.lastPaidAt':payment.createdAt,'billing.lastPaymentId':payment._id,'billing.lastPaymentAmount':amount}},{session});
   if(!changed.matchedCount)throw bad('Activation failed. Try again.',409,'CONFLICT');
-  await audit(database,actor,req,'billing.activate','tenant',id,id,`Payment ${payment.currency} ${amount} received; POS activated for ${cycles*Billing.CYCLE_DAYS} days until ${expiresAt.toISOString().slice(0,10)}`,{session});
+  await audit(database,actor,req,'billing.activate','tenant',id,id,`Payment ${payment.currency} ${amount} received; POS activated for ${days} days until ${expiresAt.toISOString().slice(0,10)}`,{session});
   outcome={ok:true,payment,expiresAt,status:'active'};
  });return outcome;}finally{await session.endSession();}
 }

@@ -24,84 +24,6 @@ async function refreshLicense() {
   if (licenseInfo?.initialized && !licenseInfo.active) { me = null; licenseScreen(); return false; }
   return true;
 }
-/* ---------- LIVE subscription billing (web version only) ---------- */
-const billingLocked = l => LIVE_WEB && !!l && l.state === 'expired';
-const billingDueDate = l => { const d = l?.billing?.dueAt || l?.expiresAt; const t = d ? new Date(d) : null; return t && !Number.isNaN(t.getTime()) ? t : null; };
-const billingDaysLeft = l => { const d = billingDueDate(l); return d ? Math.ceil((d.getTime() - Date.now()) / 86400000) : null; };
-const billingMoney = (b, n) => `${b?.currency || 'LKR'} ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-function billingBankHTML(b) {
-  const bank = b?.bank || {}, rows = [['Bank', bank.bankName], ['Account name', bank.accountName], ['Account number', bank.accountNumber], ['Branch', bank.branch], ['SWIFT / BIC', bank.swift]].filter(r => r[1]);
-  if (!rows.length) return '<p class="mut">Bank details have not been added yet. Please contact support to complete your payment.</p>';
-  return `<table style="width:100%;border-collapse:collapse;margin:8px 0">${rows.map(r => `<tr><td class="mut" style="padding:6px 8px 6px 0;white-space:nowrap">${esc(r[0])}</td><td style="padding:6px 0"><b style="user-select:all">${esc(r[1])}</b></td></tr>`).join('')}</table>${bank.instructions ? `<p class="mut" style="white-space:pre-wrap;margin:8px 0">${esc(bank.instructions)}</p>` : ''}`;
-}
-let billingLockTimer = null;
-function billingLockScreen(l) {
-  if (l) licenseInfo = l;
-  hideProcessing(); me = null; clearInterval(billingLockTimer);
-  const b = licenseInfo?.billing || {}, due = billingDueDate(licenseInfo), cycles = Math.max(1, b.overdueCycles || 1);
-  const shop = (typeof liveTenant !== 'undefined' && liveTenant?.branding?.business) || (typeof S === 'function' && S().business) || 'your shop';
-  $('#app').innerHTML = `<div class="login"><div class="card" style="max-width:520px;width:100%" role="alert"><h2 style="margin:4px 0">Subscription payment required</h2>
-<p class="mut">${esc(shop)} is locked${due ? ` since ${esc(due.toLocaleDateString(undefined, { dateStyle: 'long' }))}` : ''}. Pay the amount below to unlock the POS. Your data is safe and nothing has been deleted.</p>
-<div style="border:1px solid var(--bd);border-radius:12px;padding:14px;margin:12px 0;text-align:center"><div class="mut" style="font-size:13px">Amount due</div><div style="font-size:30px;font-weight:700">${esc(billingMoney(b, b.amountDue ?? b.monthlyFee ?? 999))}</div><div class="mut" style="font-size:13px">${cycles} billing cycle${cycles === 1 ? '' : 's'} × ${esc(billingMoney(b, b.monthlyFee ?? 999))} · each cycle is ${esc(b.cycleDays || 30)} days</div></div>
-<h3 style="margin:14px 0 4px">Pay to this bank account</h3>${billingBankHTML(b)}
-<p class="mut" style="font-size:13px">Use <b>${esc(shop)}</b> as the payment reference. After your payment is confirmed, your POS is activated for the next ${esc(b.cycleDays || 30)} days.</p>
-<p id="billingLockMsg" class="mut" role="status" style="min-height:20px"></p>
-<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p btn-lg" id="billingRecheck" type="button">I have paid, check again</button><button class="btn btn-lg" id="billingSignOut" type="button">Sign out</button></div></div></div>`;
-  const msg = $('#billingLockMsg');
-  const recheck = async quiet => {
-    try {
-      const r = await fetch('/api/auth', { credentials: 'same-origin', cache: 'no-store' }), st = await r.json();
-      if (!st.authenticated) { loginScreen(); return; }
-      if (!billingLocked(st.license)) { location.reload(); return; }
-      licenseInfo = st.license;
-      if (!quiet) msg.textContent = 'Payment has not been activated yet. Activation happens after the payment is confirmed. Please try again shortly.';
-    } catch (_) { if (!quiet) msg.textContent = 'Could not reach the server. Check your connection and try again.'; }
-  };
-  $('#billingRecheck').onclick = async e => { e.target.disabled = true; msg.textContent = 'Checking…'; await recheck(false); e.target.disabled = false; };
-  $('#billingSignOut').onclick = async () => { try { await fetch('/api/auth?mode=logout', { method: 'POST', credentials: 'same-origin' }); } catch (_) {} location.reload(); };
-  billingLockTimer = setInterval(() => recheck(true), 60000);
-}
-// Called when the server answers 402 PAYMENT_REQUIRED while the shop is open.
-async function enterBillingLock() {
-  try {
-    const r = await fetch('/api/auth', { credentials: 'same-origin', cache: 'no-store' }), st = await r.json();
-    if (!st.authenticated) { me = null; loginScreen(); return; }
-    return billingLockScreen(st.license);
-  } catch (_) { return billingLockScreen(licenseInfo); }
-}
-function showBillingDetails() {
-  const b = licenseInfo?.billing || {}, due = billingDueDate(licenseInfo);
-  modal('Subscription payment', `<p>Next payment due: <b>${due ? esc(due.toLocaleDateString(undefined, { dateStyle: 'long' })) : '—'}</b></p><p>Amount: <b>${esc(billingMoney(b, b.amountDue ?? b.monthlyFee ?? 999))}</b> for ${esc(b.cycleDays || 30)} days</p>${billingBankHTML(b)}<p class="mut" style="font-size:13px">Use your shop name as the payment reference. Your POS is extended after the payment is confirmed.</p>`, '<button class="btn" data-act="closeModal">Close</button>');
-}
-function renderBillingBadge() {
-  const el = $('#subBadge'); if (!el) return;
-  const b = licenseInfo?.billing, days = billingDaysLeft(licenseInfo);
-  if (!LIVE_WEB || !b || b.exempt || days === null) { el.style.display = 'none'; return; }
-  const color = days <= 2 ? '#dc2626' : days <= 7 ? '#d97706' : '#16a34a', due = billingDueDate(licenseInfo);
-  el.style.display = ''; el.style.color = color; el.style.borderColor = color; el.style.fontWeight = '600'; el.style.cursor = 'pointer';
-  el.textContent = days > 1 ? `Subscription: ${days} days left` : days === 1 ? 'Subscription: 1 day left' : days === 0 ? 'Subscription: due today' : 'Subscription: payment overdue';
-  el.title = `Next payment due ${due ? due.toLocaleDateString(undefined, { dateStyle: 'long' }) : ''} · ${billingMoney(b, b.amountDue ?? b.monthlyFee)}. Click for bank details.`;
-  el.onclick = showBillingDetails;
-}
-function renderBillingDue() {
-  const target = $('#licenseNotice'), b = licenseInfo?.billing, days = billingDaysLeft(licenseInfo);
-  if (!target || !b || b.exempt || days === null || days > 7 || licenseInfo.state === 'expired') return;
-  const p = document.createElement('p'), text = document.createElement('span'), open = document.createElement('button');
-  p.className = 'card'; p.setAttribute('role', 'status');
-  text.textContent = (days > 0 ? `Your subscription payment of ${billingMoney(b, b.amountDue)} is due in ${days} day${days === 1 ? '' : 's'}. ` : `Your subscription payment of ${billingMoney(b, b.amountDue)} is due now. `) + 'The POS locks when the due date passes without payment. ';
-  open.type = 'button'; open.className = 'btn btn-s'; open.textContent = 'Bank details'; open.addEventListener('click', showBillingDetails);
-  p.append(text, open); target.append(p);
-}
-let billingTick = null;
-function startBillingTick() {
-  if (!LIVE_WEB || billingTick) return;
-  let n = 0;
-  billingTick = setInterval(async () => {
-    if (!me) return; renderBillingBadge();
-    if (++n % 5) return; // every 5 minutes pick up payments, fee changes and bank details
-    try { const r = await fetch('/api/auth', { credentials: 'same-origin', cache: 'no-store' }), st = await r.json(); if (st.authenticated && st.license) { if (billingLocked(st.license)) return billingLockScreen(st.license); licenseInfo = st.license; renderLiveNotices(); } } catch (_) {}
-  }, 60000);
-}
 const allowed = n => n[3] === 'all' || (n[3] === 'mgr' && ['manager', 'owner'].includes(me.role)) || (n[3] === 'owner' && me.role === 'owner');
 
 function nav(name) {
@@ -121,7 +43,7 @@ function shell() {
   $('#app').innerHTML = `<div class="shell"><aside class="side"><div class="brand"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><div><b>${esc(S().business)}</b><small>${esc(S().tagline || '')}</small></div></div>
 <nav class="nav">${NAV.filter(allowed).map(n => `<a data-act="nav" data-id="${n[0]}"><span>${n[2]}</span> <span>${n[1]}</span></a>`).join('')}</nav>
 <div class="me"><b>${esc(me.name)}</b> (${me.role})<br><button class="btn btn-s" data-act="attendanceSelf" ${attendanceSelfAction() === 'Attendance recorded' ? 'disabled' : ''}>${attendanceSelfAction()}</button><br><a style="cursor:pointer;color:var(--acc)" data-act="logout">Log out</a><br><small style="display:block;margin-top:10px;color:#8b93a3">Developed by ZenStack360</small></div></aside>
-<div class="main"><div id="licenseNotice"></div><div id="announcementNotices"></div><div class="top"><button class="btn btn-p" data-act="nav" data-id="pos">🛒 New Sale</button><input id="gs" placeholder="Global search: product, IMEI, invoice… (Ctrl+K)" style="width:340px" data-in="gsearch"><span class="sp"></span><span class="badge" id="subBadge" style="display:none"></span><span class="clock" id="clock"></span><button class="btn btn-s" data-act="lock">🔒 Lock</button></div><div class="view" id="view"></div></div></div>`;
+<div class="main"><div id="licenseNotice"></div><div id="announcementNotices"></div><div class="top"><button class="btn btn-p" data-act="nav" data-id="pos">🛒 New Sale</button><input id="gs" placeholder="Global search: product, IMEI, invoice… (Ctrl+K)" style="width:340px" data-in="gsearch"><span class="sp"></span><span class="clock" id="clock"></span><button class="btn btn-s" data-act="lock">🔒 Lock</button></div><div class="view" id="view"></div></div></div>`;
   renderLiveNotices();
   const tick = () => { const c = $('#clock'); if (c) c.textContent = new Date().toLocaleString(); }; tick(); setInterval(tick, 30000);
   nav(me.role === 'cashier' ? 'pos' : 'dashboard');
@@ -132,7 +54,6 @@ function shell() {
 function renderLiveNotices() {
   if (!LIVE_WEB) return;
   const target=$('#licenseNotice');if(target){target.replaceChildren();if(licenseInfo?.state==='grace'||licenseInfo?.state==='expired'){const p=document.createElement('p');p.className='card';p.setAttribute('role',licenseInfo.state==='expired'?'alert':'status');p.textContent=licenseInfo.message|| (licenseInfo.state==='expired'?'Subscription expired. Data is read-only; export it and contact support to renew.':`Subscription grace period: ${licenseInfo.daysLeft||0} days left.`);target.append(p);}}
-  renderBillingDue(); renderBillingBadge(); startBillingTick();
   const area=$('#announcementNotices');if(!area)return;area.replaceChildren();for(const a of licenseInfo?.announcements||[]){const key=`smartpos-announcement:${a.title}:${a.startsAt}`;if(sessionStorage.getItem(key))continue;const p=document.createElement('p'),text=document.createElement('span'),b=document.createElement('button');p.className='card';p.setAttribute('role','status');text.textContent=`${a.title}: ${a.body} `;b.type='button';b.className='btn btn-s';b.textContent='Dismiss';b.setAttribute('aria-label',`Dismiss announcement ${a.title}`);b.addEventListener('click',()=>{sessionStorage.setItem(key,'1');p.remove();});p.append(text,b);area.append(p);}
 }
 
@@ -264,7 +185,6 @@ const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 async function liveSignIn(username, password) {
   const r = await fetchWithTimeout('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
   const result = await readApiResponse(r, 'Sign-in failed');
-  if (billingLocked(result.license)) { licenseInfo = result.license; billingLockScreen(result.license); return; }
   const cloud = await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
   cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data && typeof response.data === 'object' ? response.data : defaults();
   db = normalizeData(db);
@@ -284,7 +204,6 @@ async function completeLoginHandoff() {
   await readApiResponse(r,'Sign-in could not be completed');
   const signed=await fetchWithTimeout('/api/auth',{credentials:'same-origin',cache:'no-store'}), status=await readApiResponse(signed,'Could not load your shop');
   if(!status.authenticated)throw new Error('Sign-in could not be completed. Please try again.');
-  if(billingLocked(status.license)){licenseInfo=status.license;applyTenantBranding();billingLockScreen(status.license);return true;}
   const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud,'Could not load cloud data');
   cloudRevision=response.revision;cloudBaseData=JSON.parse(JSON.stringify(response.data));cloudMutationId='';db=normalizeData(response.data);
   me=status.user;licenseInfo=status.license||null;applyTenantBranding();localStorage.setItem(LS_KEY,JSON.stringify(db));hideProcessing();shell();startCloudPolling();
@@ -443,7 +362,6 @@ document.addEventListener('keydown', e => {
       catch(err){hideProcessing();cloudLastError=err.message||'Sign-in could not be completed. Please try again.';}
     }
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
-    if (signed.authenticated && billingLocked(signed.license)) { licenseInfo = signed.license; billingLockScreen(signed.license); startupReady = true; window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) throw new Error('The shop data is missing or invalid. Contact support to restore this shop.');

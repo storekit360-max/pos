@@ -98,7 +98,7 @@ module.exports = async (req,res) => {
       if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:`${slug}.${configuredRoot} is already taken`});
       if (await users.findOne({email})) return json(res,409,{error:'This email already has a POS account. Sign in with your email to open your existing shop.' ,code:'EMAIL_IN_USE'});
       const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:ownerName,username:email,email,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
-      const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'Trial',userLimit:5,features:[]},trialEndsAt:new Date(Date.now()+14*86400000),graceDays:7,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
+      const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'24-hour trial',userLimit:5,features:[]},trialEndsAt:new Date(now.getTime()+86400000),graceDays:0,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
       try {
         await database.collection('tenants').insertOne(tenant);
         await users.insertOne(owner);

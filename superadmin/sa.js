@@ -545,25 +545,24 @@
       if(mine!==dashRun)return;
       histOut.replaceChildren();
       if(!d.items.length){histOut.append(el('p','No payments recorded yet.','empty'));return;}
-      histOut.append(table(['Received','Shop','Amount','Cycles','Method','Reference','Active until'],d.items,(tr,p)=>{
+      histOut.append(table(['Received','Shop','Amount','Paid period','Method','Reference','Active until'],d.items,(tr,p)=>{
         const amount=el('td',money(p.currency,p.amount));if(p.voidedAt){amount.textContent+=' (voided)';amount.className='muted';}
-        tr.append(el('td',fmt(p.createdAt)),el('td',p.tenantName),amount,el('td',p.cycles??'—'),el('td',p.method),el('td',p.reference||'—'),el('td',p.periodEnd?fmtDay(p.periodEnd):'—'));
+        tr.append(el('td',fmt(p.createdAt)),el('td',p.tenantName),amount,el('td',p.days?`${p.days} days`:p.cycles?`${p.cycles} cycles`:'—'),el('td',p.method),el('td',p.reference||'—'),el('td',p.periodEnd?fmtDay(p.periodEnd):'—'));
       }));
       pager(histOut,hState,d.total,loadHist);
     }
     const refreshAll=()=>Promise.all([loadSubs(),loadHist()]);
 
     function activateDialog(t){
-      const minCycles=Math.max(1,t.overdueCycles||0);
-      const cycles=field('Billing cycles paid (30 days each)','number',String(minCycles),'cycles'),amount=field(`Amount received (${t.currency})`,'number',String(t.monthlyFee*minCycles),'amount'),method=field('Payment method','select'),ref=field('Bank reference / slip number','text','','reference'),from=field('Count the 30 days from','select');
-      cycles.control.min=String(minCycles);cycles.control.max='24';amount.control.step='any';
+      const days=field('Activation period (days)','number','30','days'),amount=field(`Amount received (${t.currency})`,'number',String(t.monthlyFee),'amount'),method=field('Payment method','select'),ref=field('Bank reference / slip number','text','','reference'),from=field('Count the activation period from','select');
+      days.control.min='1';days.control.max='3650';amount.control.step='any';
       options(method.control,[['bank transfer','Bank transfer'],['cash','Cash'],['card','Card'],['other','Other']],'bank transfer');
-      options(from.control,[['due','The due date (keeps the billing day)'],['today','Today (a full 30 days from now)']],'due');
+      options(from.control,[['due','The due date (keeps the billing day)'],['today','Today']],'due');
       let edited=false;amount.control.addEventListener('input',()=>{edited=true;});
-      cycles.control.addEventListener('input',()=>{if(!edited)amount.control.value=String(t.monthlyFee*(Number(cycles.control.value)||1));});
-      const intro=`${t.name}: ${t.overdueCycles>0?`${t.overdueCycles} cycle(s) overdue, total due ${money(t.currency,t.amountDue)}.`:`paid until ${fmtDay(t.dueAt)}. This extends the subscription.`} Confirm the money is in your bank account first. The POS unlocks immediately.`;
-      dialog('Confirm payment and activate',intro,[cycles,amount,method,ref,from],'Activate POS',async()=>{
-        const d=await api('billing.activate',{tenantId:t._id,cycles:Number(cycles.control.value),amount:Number(amount.control.value),method:method.control.value,reference:ref.control.value,from:from.control.value});
+      days.control.addEventListener('input',()=>{if(!edited)amount.control.value=String(t.monthlyFee*(Number(days.control.value)||0)/30);});
+      const intro=`${t.name}: current due date ${fmtDay(t.dueAt)}. Choose the paid access period. Confirm the money is in your bank account first. The POS unlocks immediately.`;
+      dialog('Confirm payment and activate',intro,[days,amount,method,ref,from],'Activate POS',async()=>{
+        const d=await api('billing.activate',{tenantId:t._id,days:Number(days.control.value),amount:Number(amount.control.value),method:method.control.value,reference:ref.control.value,from:from.control.value});
         closeModal();toast(`${t.name} is active until ${fmtDay(d.expiresAt)}`);await refreshAll();
       });
     }
