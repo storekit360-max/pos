@@ -589,6 +589,16 @@
     let settings;
     try{settings=(await api('settings.get')).settings||{};}catch(e){c.append(el('p',e.message,'error-text'));return;}
     const previews=[];
+    const sms=card('Online POS creation SMS');
+    sms.append(el('p','Send a Text.lk notification to the super admin when a customer creates a POS through online registration. Offline POS creation is not included.','muted'));
+    const smsFields={
+      smsOAuthEndpoint:field('OAuth 2.0 API endpoint (optional)','url',settings.smsOAuthEndpoint||'','smsOAuthEndpoint'),
+      smsHttpEndpoint:field('HTTP API endpoint','url',settings.smsHttpEndpoint||'https://app.text.lk/api/v3/sms/send','smsHttpEndpoint'),
+      smsApiToken:field(settings.smsTokenConfigured?'API token (saved; leave blank to keep it)':'API token','password','','smsApiToken'),
+      smsAdminPhone:field('Super admin phone number','tel',settings.smsAdminPhone||'','smsAdminPhone')
+    };
+    Object.values(smsFields).forEach(x=>sms.append(x));
+    sms.append(el('small','Uses Text.lk Bearer token authentication. OAuth endpoint is saved for reference; Text.lk v3 uses the API token directly.','muted'));
     const upload=(label,key,accept,hint)=>{
       const wrapper=el('div',undefined,'field');wrapper.append(el('span',label));
       const input=el('input');input.type='file';input.accept=accept;input.setAttribute('aria-label',label);
@@ -602,7 +612,7 @@
     const actions=row();
     actions.append(btn('Clear logo',()=>{previews[0].clear();}));
     actions.append(btn('Clear favicon',()=>{previews[1].clear();}));
-    const save=btn('Save settings',()=>busy(save,async()=>{const payload={defaultTrialDays:settings.defaultTrialDays,defaultGraceDays:settings.defaultGraceDays,supportContact:settings.supportContact,siteLogo:previews[0].get(),siteFavicon:previews[1].get()};await api('settings.save',payload);settings=payload;toast('Branding settings saved');}), 'primary');actions.append(save);
+    const save=btn('Save settings',()=>busy(save,async()=>{const payload={defaultTrialDays:settings.defaultTrialDays,defaultGraceDays:settings.defaultGraceDays,supportContact:settings.supportContact,siteLogo:previews[0].get(),siteFavicon:previews[1].get(),smsOAuthEndpoint:smsFields.smsOAuthEndpoint.control.value.trim(),smsHttpEndpoint:smsFields.smsHttpEndpoint.control.value.trim(),smsApiToken:smsFields.smsApiToken.control.value,smsAdminPhone:smsFields.smsAdminPhone.control.value.trim()};await api('settings.save',payload);settings={...payload,smsApiToken:'',smsTokenConfigured:settings.smsTokenConfigured||!!payload.smsApiToken};smsFields.smsApiToken.control.value='';toast('Settings saved');}), 'primary');actions.append(save);
   }
 
   /* ================= Routing ================= */

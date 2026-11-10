@@ -125,6 +125,17 @@ module.exports = async (req,res) => {
           ? 'Your shop could not be opened because automatic domain setup is not configured. Contact support.'
           : 'Your shop address could not be activated. Please try again or contact support.'});
       }
+      // SMS notifications are best effort and apply only to public online registration.
+      try {
+        const sms=await database.collection('superadmin_settings').findOne({_id:'global'});
+        if(sms?.smsApiToken&&sms?.smsAdminPhone){
+          const token=require('./_sa_auth').decryptSecret(sms.smsApiToken);
+          const message=`New pos created - ${phone} - ${shopName} - ${ownerName}`;
+          const response=await fetch(sms.smsHttpEndpoint||'https://app.text.lk/api/v3/sms/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify({recipient:sms.smsAdminPhone,sender_id:'TextLKDemo',type:'plain',message}),signal:AbortSignal.timeout(5000)});
+          const result=await response.json().catch(()=>({}));
+          if(!response.ok||result.status==='error')console.error('Text.lk SMS notification failed:',response.status,result.message||'Provider returned an error');
+        }
+      } catch(error) { console.error('Online POS SMS notification failed:',error.message); }
       return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,handoffToken,user:{id:owner.id,name:owner.name,email:owner.email,role:owner.role}});
     }
     if (mode === 'login') {

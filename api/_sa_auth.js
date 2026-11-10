@@ -11,6 +11,7 @@ function totp(secretText, time=Date.now()) { const key=decode32(secretText), cou
 function b32(buf) { let bits=0,v=0,out=''; for(const byte of buf){v=(v<<8)|byte;bits+=8;while(bits>=5){out+='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[(v>>>(bits-=5))&31];}} if(bits) out+='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'[(v<<(5-bits))&31]; return out; }
 function encryptTotp(value) { const key=crypto.createHash('sha256').update(secret()).digest(), iv=crypto.randomBytes(12), c=crypto.createCipheriv('aes-256-gcm',key,iv); const data=Buffer.concat([c.update(value,'utf8'),c.final()]); return [iv.toString('base64url'),c.getAuthTag().toString('base64url'),data.toString('base64url')].join('.'); }
 function decryptTotp(value) { const [i,t,d]=String(value).split('.'), c=crypto.createDecipheriv('aes-256-gcm',crypto.createHash('sha256').update(secret()).digest(),Buffer.from(i,'base64url')); c.setAuthTag(Buffer.from(t,'base64url')); return Buffer.concat([c.update(Buffer.from(d,'base64url')),c.final()]).toString(); }
+const encryptSecret=encryptTotp, decryptSecret=decryptTotp;
 function originOK(req) { try { const origin=new URL(req.headers.origin); return origin.protocol==='https:'&&origin.host===req.headers.host; } catch { return false; } }
 function clientIp(req) { return String(req.headers['x-vercel-forwarded-for']||req.headers['x-real-ip']||req.headers['x-forwarded-for']||'').split(',')[0].trim().toLowerCase().replace(/^::ffff:/,'').slice(0,100); }
 function ipv4ToInt(text) { const p=String(text).split('.'); if(p.length!==4)return null; let n=0; for(const x of p){ if(!/^\d{1,3}$/.test(x)||Number(x)>255)return null; n=n*256+Number(x); } return n; }
@@ -52,4 +53,4 @@ async function authenticate(database, req, res, route) {
  if(!['GET','HEAD'].includes(req.method)){ if(!originOK(req))return {error:'Same-origin request required',code:'CSRF',status:403}; const supplied=req.headers['x-csrf-token']; if(!safeEqual(sha(supplied),s.csrfHash))return {error:'CSRF token is missing or invalid',code:'CSRF',status:403}; }
  if(now-new Date(s.lastSeenAt)>60000)database.collection('superadmin_sessions').updateOne({_id:s._id},{$set:{lastSeenAt:now}}).catch(()=>{}); return {admin,session:s,csrf: null};
 }
-module.exports={ROLES,sha,safeEqual,totp,b32,encryptTotp,decryptTotp,rateBlocked,rateFail,rateClear,DUMMY_HASH,clientIp,createSession,authenticate,clearCookie,originOK,ipAllowed};
+module.exports={ROLES,sha,safeEqual,totp,b32,encryptTotp,decryptTotp,encryptSecret,decryptSecret,rateBlocked,rateFail,rateClear,DUMMY_HASH,clientIp,createSession,authenticate,clearCookie,originOK,ipAllowed};
