@@ -507,6 +507,7 @@ function qdBlank(type) {
     companyName: o.business || '', companyTagline: o.tagline || '', companyAddress: o.address || '', companyPhone: o.phone || '', companyEmail: o.email || '',
     companySub: o.docSub || '', companyFootTag: o.docFootTag || '', signName: o.docSignName || '',
     terms: o.invoiceTerms || '', bankOn: false, accNo: '', accName: '', bank: '', branch: '',
+    logoX: 22, logoY: 14, logoW: 246, logoH: 123,
     items: [qdItem()], status: 'draft'
   };
   return inv ? ivApply(d) : d;       // invoices start from the saved business invoice design
@@ -532,6 +533,7 @@ function qdHTML(d) {
   const accentDark = `color-mix(in srgb, ${accent} 68%, #000)`;
   const accentLight = `color-mix(in srgb, ${accent} 18%, #fff)`;
   const logo = o.docLogo || o.logoData || '', bulb = o.docBulb || '', sign = o.docSign || o.documentSignatureData || '';
+  const logoX = ivClamp(d.logoX ?? 22, 0, 794), logoY = ivClamp(d.logoY ?? 14, 0, 173), logoW = ivClamp(d.logoW ?? 246, 20, 794), logoH = ivClamp(d.logoH ?? 123, 20, 173);
   let orig = 0, tot = 0;
   const items = d.items || [];
   items.forEach(i => { orig += num(i.qty) * num(i.regularPrice ?? i.price); tot += num(i.qty) * num(i.price); });
@@ -549,7 +551,7 @@ function qdHTML(d) {
   const m2 = q ? qdDate(d.validUntil) : d.poNumber;
   return `<div class="qd" style="--qd-accent:${accent};--qd-accent-dark:${accentDark};--qd-accent-light:${accentLight}">
   <div class="qd-hd"><svg style="position:absolute;left:0;top:0" width="794" height="173" viewBox="0 0 794 173"><defs><linearGradient id="qdhg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="${accent}"/><stop offset="1" stop-color="${accentDark}"/></linearGradient></defs><polygon points="275,0 794,0 794,173 376,173" fill="${accent}"/><polygon points="291,0 794,0 794,173 399,173" fill="url(#qdhg)"/></svg>
-    ${logo ? `<img class="qd-logo" src="${esc(logo)}" alt="">` : `<div class="qd-logo qd-logot">${esc(d.companyName)}</div>`}${bulb ? `<img class="qd-bulb" src="${esc(bulb)}" alt=""><div class="qd-bf"></div>` : ''}
+    ${logo ? `<img class="qd-logo" style="left:${logoX}px;top:${logoY}px;width:${logoW}px;height:${logoH}px" src="${esc(logo)}" alt="">` : `<div class="qd-logo qd-logot" style="left:${logoX}px;top:${logoY}px;width:${logoW}px;height:${logoH}px">${esc(d.companyName)}</div>`}${bulb ? `<img class="qd-bulb" src="${esc(bulb)}" alt=""><div class="qd-bf"></div>` : ''}
     ${d.companyTagline ? `<div class="qd-tag">${qdNl(d.companyTagline)}</div>` : ''}<div class="qd-ttl" style="font-size:${q ? 39 : 47}px">${q ? 'QUOTATION' : 'INVOICE'}</div>${d.companySub ? `<div class="qd-sub">${esc(d.companySub).replace(/ {2}/g, ' &nbsp;')}</div>` : ''}</div>
   <div class="qd-info">
     <div class="qd-co"><h2>${esc(d.companyName)}</h2>${line(QD_SVG.pin, qdNl(d.companyAddress))}${line(QD_SVG.tel, esc(d.companyPhone))}${line(QD_SVG.mail, esc(d.companyEmail))}</div>
@@ -711,8 +713,10 @@ function qeForm() {
   <div class="qe-row2">${qeF('Phone', 'companyPhone')}${qeF('Email', 'companyEmail')}</div>
   ${qeF('Header tagline', 'companyTagline', { area: 1 })}${qeF('Header subtitle', 'companySub')}${qeF('Footer text (right)', 'companyFootTag', { area: 1 })}${qeF('Signatory name', 'signName')}
   <div class="qe-row3 eq" style="margin-top:8px"><label class="qe-l">Logo<input type="file" accept="image/png,image/jpeg,image/webp" data-qimg="docLogo"></label><label class="qe-l">Header image<input type="file" accept="image/png,image/jpeg,image/webp" data-qimg="docBulb"></label><label class="qe-l">Signature<input type="file" accept="image/png,image/jpeg,image/webp" data-qimg="docSign"></label></div>
+  <div class="qe-row2">${qeF('Logo left position (px)', 'logoX', { type: 'number' })}${qeF('Logo top position (px)', 'logoY', { type: 'number' })}</div>
+  <div class="qe-row2">${qeF('Logo width (px)', 'logoW', { type: 'number' })}${qeF('Logo height (px)', 'logoH', { type: 'number' })}</div>
   <div class="qe-imgs">${imgBtn('docLogo', 'logo')}${imgBtn('docBulb', 'header image')}${imgBtn('docSign', 'signature')}</div>
-  <p class="qe-note">Images are saved once and reused on every document. With no logo chosen, the logo from Settings is used.</p></fieldset>
+  <p class="qe-note">Logo position and size are saved with this document. Images are reused on every document. With no logo chosen, the logo from Settings is used. Position and size are measured in A4 preview pixels.</p></fieldset>
 <fieldset class="qe-fs"><legend>Customer</legend><label class="qe-l">Saved customer<select data-in="qeCust"><option value="">Walk-in / type below</option>${custOpts}</select></label>${qeF('Bill to name', 'billName')}${qeF('Address', 'billAddress', { area: 1 })}${qeF('Phone', 'billPhone')}</fieldset>
 <fieldset class="qe-fs"><legend>${q ? 'Quotation' : 'Invoice'} details</legend>
   <div class="qe-row2">${qeF('Date', 'date', { type: 'date' })}${qeF(q ? 'Quote #' : 'Invoice #', 'no')}</div>
@@ -783,6 +787,7 @@ A.qeSave = () => {
     customerId: d.customerId || '', customerName: String(d.billName || '').trim() || c?.name || '', billName: String(d.billName || '').trim(), billPhone: String(d.billPhone || '').trim(), billAddress: String(d.billAddress || '').trim(),
     companyName: String(d.companyName || '').trim(), companyTagline: String(d.companyTagline || '').trim(), companyAddress: String(d.companyAddress || '').trim(), companyPhone: String(d.companyPhone || '').trim(), companyEmail: String(d.companyEmail || '').trim(),
     companySub: String(d.companySub || '').trim(), companyFootTag: String(d.companyFootTag || '').trim(), signName: String(d.signName || '').trim(),
+    logoX: ivClamp(d.logoX ?? 22, 0, 794), logoY: ivClamp(d.logoY ?? 14, 0, 173), logoW: ivClamp(d.logoW ?? 246, 20, 794), logoH: ivClamp(d.logoH ?? 123, 20, 173),
     terms: d.terms || '', bankOn: !!d.bankOn, accNo: d.accNo || '', accName: d.accName || '', bank: d.bank || '', branch: d.branch || '',
     items, status: ex?.status || 'draft', createdAt: ex?.createdAt || nowISO(), updatedAt: nowISO(), user: ex?.user || me.name
   };
@@ -806,7 +811,7 @@ A.convertQuote = async id => { const q = db.quotations.find(x => x.id === id); i
    saved). The page setup below (paper, margins, scale, offsets, feed, text size) is applied to BOTH invoice types:
    - Business invoice (A4 design): scaled to fit the printable area of the chosen paper, or a manual scale.
    - Thermal receipt: fluid "Auto" width for any roll, fixed 58/80 mm, custom width, or an A4/Letter sheet. */
-const IV_FIELDS = [...QE_COMPANY, 'dateLabel', 'm2Label', 'numLabel', 'terms', 'bankOn', 'accNo', 'accName', 'bank', 'branch'];
+const IV_FIELDS = [...QE_COMPANY, 'dateLabel', 'm2Label', 'numLabel', 'terms', 'bankOn', 'accNo', 'accName', 'bank', 'branch', 'logoX', 'logoY', 'logoW', 'logoH'];
 const IV_IMAGES = ['docLogo', 'docBulb', 'docSign'];
 const IV_PAPERS = { A4: [210, 297], A5: [148, 210], Letter: [215.9, 279.4], Legal: [215.9, 355.6] };
 const IV_SHEET_CSS = '.iv-sheet{position:relative;overflow:hidden;background:#fff;box-sizing:border-box}.iv-fit{position:absolute;width:794px;height:1122px;transform-origin:0 0}';
@@ -937,6 +942,8 @@ function ivForm() {
   <div class="qe-row2">${ivF('Phone', 'companyPhone')}${ivF('Email', 'companyEmail')}</div>
   ${ivF('Header tagline', 'companyTagline', { area: 1 })}${ivF('Header subtitle', 'companySub')}${ivF('Footer text (right)', 'companyFootTag', { area: 1 })}${ivF('Signatory name', 'signName')}
   <div class="qe-row3 eq" style="margin-top:8px"><label class="qe-l">Logo<input type="file" accept="image/png,image/jpeg,image/webp" data-iimg="docLogo"></label><label class="qe-l">Header image<input type="file" accept="image/png,image/jpeg,image/webp" data-iimg="docBulb"></label><label class="qe-l">Signature<input type="file" accept="image/png,image/jpeg,image/webp" data-iimg="docSign"></label></div>
+  <div class="qe-row2">${ivF('Logo position from left (px)', 'logoX', { type: 'number' })}${ivF('Logo position from top (px)', 'logoY', { type: 'number' })}</div>
+  <div class="qe-row2">${ivF('Logo width (px)', 'logoW', { type: 'number' })}${ivF('Logo height (px)', 'logoH', { type: 'number' })}</div>
   <div class="qe-imgs">${imgBtn('docLogo', 'logo')}${imgBtn('docBulb', 'header image')}${imgBtn('docSign', 'signature')}</div>
   <p class="qe-note">Images are saved once and reused on every document. With no logo chosen, the logo from Settings is used.</p></fieldset>
 <fieldset class="qe-fs"><legend>Field labels</legend><div class="qe-row3 eq">${ivF('Date', 'dateLabel')}${ivF('PO / reference', 'm2Label')}${ivF('Number', 'numLabel')}</div></fieldset>
