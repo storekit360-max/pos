@@ -87,13 +87,12 @@ module.exports = async (req,res) => {
       const handoffToken=crypto.randomBytes(32).toString('base64url'),handoffHash=crypto.createHash('sha256').update(handoffToken).digest('hex');
       await database.collection('login_handoffs').insertOne({_id:handoffHash,userId:owner.id,tenantId:id,sessionVersion:owner.sessionVersion||0,expiresAt:new Date(Date.now()+10*60*1000),createdAt:new Date()});
       const root=configuredRoot;
-      let domainRegistration;
-      try { domainRegistration=await registerTenantDomain(slug); }
-      catch(error) {
+      // Domain registration is independent of the tenant records and can take
+      // several seconds. Do not hold up the new shop's secure handoff for it.
+      void registerTenantDomain(slug).catch(error => {
         console.error('Vercel domain registration failed:',error.message);
-        domainRegistration={error:error.code==='VERCEL_DOMAIN_CONFIG' ? error.message : 'Shop created, but Vercel did not confirm the hostname. Check Vercel project domain settings.'};
-      }
-      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,handoffToken,domainRegistration,user:{id:owner.id,name:owner.name,email:owner.email,role:owner.role}});
+      });
+      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,handoffToken,user:{id:owner.id,name:owner.name,email:owner.email,role:owner.role}});
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();

@@ -141,23 +141,8 @@ function showProcessing(title, message) {
 function hideProcessing() { const el = document.getElementById('authProcessing'); if (el) el.hidden = true; }
 async function openNewTenant(tenantUrl, handoffToken) {
   const target = new URL(tenantUrl);
-  const deadline = Date.now() + 5 * 60 * 1000;
-  let attempt = 0;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${target.origin}/api/auth?mode=status`, { cache: 'no-store', mode: 'cors' });
-      if (response.ok) {
-        const status = await response.json();
-        if (status.tenant?.slug === target.hostname.split('.')[0]) { target.searchParams.set('handoff', handoffToken); location.assign(target.href); return; }
-      }
-    } catch (_) { /* DNS, TLS, and edge propagation can take a little while. */ }
-    attempt++;
-    const seconds = Math.min(20, 3 + attempt * 2);
-    showProcessing('Your shop is coming online', `Configuring ${target.hostname}. We’ll open it automatically as soon as it’s ready. Checking again in ${seconds} seconds.`);
-    await new Promise(resolve => setTimeout(resolve, seconds * 1000));
-  }
-  hideProcessing();
-  toast(`Your POS is created. Its address is ${target.hostname}; it is still activating. Please try this link again shortly.`, 'err');
+  target.searchParams.set('handoff', handoffToken);
+  location.assign(target.href);
 }
 const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 
@@ -249,8 +234,8 @@ function liveAuthScreen(view, opts = {}) {
     };
   } else if (isRegister && $('#liveRegister')) {
     const f=$('#liveRegister').elements, availability=$('#slugAvailability'), slugInput=f.namedItem('slug');
-    const showDomain=d=>{const suffix=d.subdomain?d.subdomain.slice('shopzen'.length):d.displayDomain?`.${d.displayDomain}`:'';if(suffix)$('#tenantDomain').textContent=suffix.startsWith('.')?suffix:`.${d.subdomain}`;};
-    fetch('/api/auth?mode=slug&value=shopzen').then(r=>r.json()).then(showDomain).catch(()=>{});
+    const showDomain=d=>{const domain=d.displayDomain||d.subdomain?.split('.').slice(1).join('.')||'';if(domain)$('#tenantDomain').textContent=`.${domain}`;};
+    fetch('/api/auth?mode=slug&value=shopzen',{cache:'no-store'}).then(r=>r.json()).then(showDomain).catch(()=>{});
     const slugify=value=>value.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,49).replace(/-+$/g,'');
     let timer, lastSlug='', checkedAvailable=false, manuallyEdited=false;
     const checkSlug=async()=>{const slug=slugInput.value.trim().toLowerCase();lastSlug=slug;checkedAvailable=false;if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug)){availability.textContent=slug?'Use 2–49 lowercase letters, numbers, and dashes.':'Enter a business name to create your POS address.';return;}availability.textContent='Checking shop address…';try{const r=await fetch(`/api/auth?mode=slug&value=${encodeURIComponent(slug)}`),d=await r.json();if(slug!==slugInput.value.trim().toLowerCase())return;showDomain(d);const host=d.subdomain||'';checkedAvailable=!!(d.valid&&d.available&&d.subdomain);availability.textContent=!d.subdomain?'This Vercel address cannot host shop subdomains. Configure a custom root domain with wildcard DNS and TLS to enable shop creation.':d.valid?(d.available?`${host} is available`:`${host} is already taken`):'Use 2–49 lowercase letters, numbers, and dashes.';}catch{availability.textContent='Could not check this POS address. It will be checked again when you create the shop.';}};
