@@ -5,6 +5,7 @@ let db = null, me = null;
 const LIVE_WEB = !window.posApi && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.protocol === 'https:';
 let cloudRevision = 0, cloudSyncTimer = null, cloudSyncBusy = false, cloudRefreshPromise = null, cloudLastError = '', cloudBaseData = null, cloudMutationId = '', cloudPollTimer = null;
 const CLOUD_CONFLICT_KEY = LS_KEY + ':conflict';
+const THEME_CACHE_PREFIX = LS_KEY + ':theme:';
 const A = {}, I = {};                    // click actions (data-act) and input handlers (data-in)
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -314,7 +315,12 @@ function applyTheme() {
   const accent = S().accent || defaults().settings.accent;
   document.documentElement.style.setProperty('--acc', accent);
   document.documentElement.style.setProperty('--acc2', accent);
+  document.documentElement.classList.toggle('dark', !!S().dark);
   document.body.classList.toggle('dark', !!S().dark);
+  try {
+    const tenant = location.hostname.split('.')[0] || 'main';
+    localStorage.setItem(THEME_CACHE_PREFIX + tenant, JSON.stringify({ accent, dark: !!S().dark }));
+  } catch (_) { /* Storage can be disabled; theme still applies in memory. */ }
 }
 
 /* ---------- accounting ---------- */

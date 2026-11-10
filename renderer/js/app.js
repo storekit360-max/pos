@@ -260,6 +260,15 @@ document.addEventListener('keydown', e => {
     // Do not show a sign-in form until this host and any saved session have
     // been checked. In particular, an unknown tenant host must not look valid.
     db = defaults();
+    // Use this tenant's last local snapshot immediately for a warm start. It
+    // remains provisional until the server confirms the session and revision.
+    try {
+      const cached = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (cached && typeof cached === 'object' && !Array.isArray(cached)) {
+        db = normalizeData(cached);
+        applyTheme();
+      }
+    } catch (_) { db = defaults(); }
     startupScreen();
     // Web local storage is a cache only; cloud data below is authoritative.
     let status, setup, signed;
@@ -293,6 +302,7 @@ document.addEventListener('keydown', e => {
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();applyTenantBranding();}
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
+      applyTheme();
       me=signed.user; licenseInfo=signed.license||null; shell(); startCloudPolling(); if(cloudMutationId)queueCloudSync();
     } else { db = normalizeData(defaults()); loginScreen(); }
     startupReady = true;

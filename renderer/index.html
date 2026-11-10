@@ -6,10 +6,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POS</title>
 <script>
-// Keep the initial login/setup screen on the product's default accent.
+// Apply the last known shop theme before the stylesheet paints. The cache is
+// only a presentation hint; authenticated cloud data remains authoritative.
 (() => {
-  document.documentElement.style.setProperty('--acc', '#f97316');
-  document.documentElement.style.setProperty('--acc2', '#ea580c');
+  let accent = '#f97316', dark = false;
+  try {
+    const tenant = location.hostname.split('.')[0] || 'main';
+    const cached = JSON.parse(localStorage.getItem(`thesmart_pos_theme:${tenant}`) || 'null');
+    if (cached && /^#[0-9a-f]{6}$/i.test(cached.accent || '')) accent = cached.accent;
+    dark = !!cached?.dark;
+  } catch (_) {}
+  document.documentElement.style.setProperty('--acc', accent);
+  document.documentElement.style.setProperty('--acc2', accent);
+  if (dark) document.documentElement.classList.add('dark');
 })();
 </script>
 <link rel="stylesheet" href="style.css">
