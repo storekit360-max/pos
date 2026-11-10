@@ -507,9 +507,9 @@
     const f={monthlyFee:field('Monthly fee (per 30 days)','number',settings.monthlyFee,'monthlyFee'),currency:field('Currency','text',settings.currency,'currency'),bankName:field('Bank name','text',settings.bankName,'bankName'),accountName:field('Account holder name','text',settings.accountName,'accountName'),accountNumber:field('Account number','text',settings.accountNumber,'accountNumber'),branch:field('Branch','text',settings.branch,'branch'),swift:field('SWIFT / BIC (optional)','text',settings.swift,'swift'),supportContact:field('Payment support contact number','tel',settings.supportContact,'supportContact'),instructions:field('Payment instructions (optional)','textarea',settings.instructions,'instructions')};
     f.monthlyFee.control.min='1';f.monthlyFee.control.step='any';
     const r1=rowIn(bank),r2=rowIn(bank),r3=rowIn(bank);
-    r1.append(f.monthlyFee,f.currency);r2.append(f.bankName,f.accountName,f.accountNumber,f.branch,f.swift);r3.append(f.instructions);
+    r1.append(f.monthlyFee,f.currency);r2.append(f.bankName,f.accountName,f.accountNumber,f.branch,f.swift);r3.append(f.supportContact,f.instructions);
     if(!editable)for(const x of Object.values(f))x.control.disabled=true;
-    else{const save=btn('Save payment details',()=>busy(save,async()=>{const b={};for(const [k,v] of Object.entries(f))b[k]=v.control.value;b.monthlyFee=Number(b.monthlyFee);await api('billing.settings.save',b);toast('Payment details saved');await billingPage();}),'primary');bank.append(save);}
+    else{const save=btn('Save payment details',()=>busy(save,async()=>{const b={};for(const [k,v] of Object.entries(f))b[k]=v.control.value;b.monthlyFee=Number(b.monthlyFee);await api('billing.settings.save',b);toast('Payment details saved');save.textContent='Saved';setTimeout(()=>{if(save.isConnected)save.textContent='Save payment details';},1800);}), 'primary');bank.append(save);}
 
     // ---- shop subscriptions ----
     const subs=card('Shop subscriptions'),filters=rowIn(subs),q=field('Search','search',bState.search,'search'),st=field('Show','select');
