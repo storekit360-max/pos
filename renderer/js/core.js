@@ -64,10 +64,9 @@ function defaults() {
 let saveTimer;
 function save() { if (LIVE_WEB && me && !cloudMutationId) cloudMutationId = uid(); clearTimeout(saveTimer); saveTimer = setTimeout(flush, 120); }
 function preserveCloudConflict(local, remote, revision) {
-  const conflict = { local, remote, revision, savedAt: new Date().toISOString() };
-  localStorage.setItem(CLOUD_CONFLICT_KEY, JSON.stringify(conflict));
-  cloudLastError = 'Cloud data changed while this device had unsynced edits. Your local copy is preserved. Export it, then choose how to resolve the conflict.';
-  showCloudSyncStatus();
+  // Retain a recoverable copy for legacy/manual resolution. Routine revision
+  // races are retried automatically and do not interrupt the active POS.
+  localStorage.setItem(CLOUD_CONFLICT_KEY, JSON.stringify({ local, remote, revision, savedAt: new Date().toISOString() }));
 }
 function exportCloudConflict() {
   const conflict = JSON.parse(localStorage.getItem(CLOUD_CONFLICT_KEY) || 'null');
@@ -112,13 +111,27 @@ async function syncCloud() {
     const local = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
     if (!cloudBaseData) { await refreshCloudThenSync(); return; }
     if (!cloudMutationId || !local) return;
-    const r = await fetch('/api/data', {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({data:local,baseRevision:cloudRevision,clientMutationId:cloudMutationId})});
+    const mutationId = cloudMutationId;
+    const r = await fetch('/api/data', {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({data:local,baseRevision:cloudRevision,clientMutationId:mutationId})});
     const result = await r.json();
-    if (!r.ok) { if (r.status === 409) { const latest = await fetch('/api/data',{credentials:'same-origin'}); const remote = await latest.json(); if (latest.ok) preserveCloudConflict(local, remote.data, remote.revision); else { cloudLastError='Cloud data changed, and the latest copy could not be loaded. Your local copy remains saved.'; showCloudSyncStatus(); } } else if (r.status === 402 && result.code === 'LICENSE_EXPIRED') { if(typeof licenseInfo!=='undefined')licenseInfo={...(licenseInfo||{}),state:'expired',message:result.error}; cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; nav(current); showCloudSyncStatus(); } else if (r.status === 403 && result.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me = null; loginScreen(); showCloudSyncStatus(); } else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; return; }
-    cloudRevision = result.revision; cloudBaseData = JSON.parse(JSON.stringify(local)); cloudMutationId = ''; localStorage.removeItem(LS_KEY + ':pending'); cloudLastError = '';
+    if (!r.ok && r.status === 409) {
+      // Rebase this pending full snapshot on the latest revision. Keep the same
+      // mutation id: if the prior request committed but its response was lost,
+      // the API recognizes the duplicate and returns its committed revision.
+      const latest = await fetch('/api/data',{credentials:'same-origin'}), remote = await latest.json();
+      if (!latest.ok) throw new Error('Could not refresh cloud revision');
+      cloudRevision = remote.revision;
+      cloudBaseData = JSON.parse(JSON.stringify(remote.data));
+      localStorage.setItem(LS_KEY + ':pending',JSON.stringify({revision:cloudRevision,mutationId}));
+      if (JSON.stringify(localStorageSnapshot()) !== JSON.stringify(local)) return queueCloudSync();
+      return queueCloudSync();
+    }
+    if (!r.ok) { if (r.status === 402 && result.code === 'LICENSE_EXPIRED') { if(typeof licenseInfo!=='undefined')licenseInfo={...(licenseInfo||{}),state:'expired',message:result.error}; cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; nav(current); showCloudSyncStatus(); } else if (r.status === 403 && result.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me = null; loginScreen(); showCloudSyncStatus(); } else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; return; }
+    cloudRevision = result.revision; cloudBaseData = JSON.parse(JSON.stringify(local)); if (cloudMutationId === mutationId) cloudMutationId = ''; localStorage.removeItem(LS_KEY + ':pending'); cloudLastError = '';
   } catch (_) { cloudLastError = 'Offline changes are saved on this device and will sync when reconnected.'; }
   finally { cloudSyncBusy = false; if (cloudLastError && me && navigator.onLine && !cloudLastError.startsWith('Cloud data changed') && !cloudLastError.startsWith('Your subscription expired')) { clearTimeout(cloudSyncTimer); cloudSyncTimer=setTimeout(syncCloud,5000); } }
 }
+function localStorageSnapshot() { try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; } }
 window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); });
 // Tenant POS instances use separate browser storage, so changes from another
 // signed-in session must be fetched from the tenant's cloud snapshot.
@@ -139,7 +152,10 @@ async function refreshCloudThenSync() {
     if (JSON.stringify(response.data) !== JSON.stringify(cloudBaseData)) {
       const local=JSON.parse(localStorage.getItem(LS_KEY)||'null'), pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if (local && cloudBaseData && JSON.stringify(local) !== JSON.stringify(cloudBaseData)) {
-        if (pending || cloudMutationId) { preserveCloudConflict(local, response.data, response.revision); return; }
+        if (pending || cloudMutationId) {
+          cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data));
+          queueCloudSync(); return;
+        }
       }
       cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudRevision=response.revision;
       db=typeof normalizeData === 'function' ? normalizeData(response.data) : response.data;
@@ -148,7 +164,6 @@ async function refreshCloudThenSync() {
       if (typeof syncBranding === 'function') syncBranding();
       if (typeof nav === 'function' && me) nav(current);
     }
-    if (cloudLastError.startsWith('Cloud data changed')) return;
     if (cloudMutationId) queueCloudSync();
     cloudLastError = '';
   } catch (_) { cloudLastError='Offline changes remain saved on this device and will sync when reconnected.'; }
@@ -157,18 +172,6 @@ async function refreshCloudThenSync() {
   return cloudRefreshPromise;
 }
 function showCloudSyncStatus() {
-  if (cloudLastError.startsWith('Cloud data changed') && typeof me !== 'undefined' && me) {
-    const root = document.getElementById('app');
-    if (root && !document.getElementById('cloudConflict')) {
-      const box = document.createElement('section'); box.id='cloudConflict'; box.className='cloud-conflict'; box.setAttribute('role','alert');
-      box.innerHTML='<b>Sync paused to protect your work</b><p>Your local changes and the latest cloud data are saved separately. Export your local copy before choosing which version to keep.</p><div><button type="button" data-conflict="export">Export local copy</button><button type="button" data-conflict="cloud">Use cloud copy</button><button type="button" data-conflict="local">Keep local copy and retry</button></div><small>Keeping local retries the full local snapshot against the latest version and can replace newer cloud records.</small>';
-      root.prepend(box);
-      box.querySelector('[data-conflict="export"]').onclick=exportCloudConflict;
-      box.querySelector('[data-conflict="cloud"]').onclick=()=>resolveCloudConflict('cloud');
-      box.querySelector('[data-conflict="local"]').onclick=()=>{ if(confirm('This retries your full local shop snapshot against the latest cloud version. Newer cloud records may be replaced. Continue?')) resolveCloudConflict('local'); };
-    }
-    return;
-  }
   document.getElementById('cloudConflict')?.remove();
   if (typeof toast === 'function' && cloudLastError) toast(cloudLastError,'err');
 }
