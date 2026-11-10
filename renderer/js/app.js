@@ -85,10 +85,10 @@ function loginScreen() {
     if (Date.now() < lockUntil) return toast(`Too many attempts. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)}s`, 'err');
     if (LIVE_WEB) {
       try {
-        const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:$('#lu').value.trim().toLowerCase(),password:$('#lp').value})});
+        const r = await fetchWithTimeout('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:$('#lu').value.trim().toLowerCase(),password:$('#lp').value})});
         const result = await readApiResponse(r, 'Sign-in failed'); licenseInfo=result.license||null;
-        const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
-        cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {}); localStorage.setItem(LS_KEY,JSON.stringify(db));
+        const cloud = await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
+        cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {}); const conflict=JSON.parse(localStorage.getItem(CLOUD_CONFLICT_KEY)||'null'); if(conflict){conflict.remote=JSON.parse(JSON.stringify(db));conflict.revision=cloudRevision;localStorage.setItem(CLOUD_CONFLICT_KEY,JSON.stringify(conflict));} localStorage.setItem(LS_KEY,JSON.stringify(db));
         me=result.user; log('login',me.username); shell(); startCloudPolling(); return;
       } catch (err) { toast(err.message || 'Live sign-in failed','err'); return; }
     }
@@ -142,17 +142,26 @@ function hideProcessing() { const el = document.getElementById('authProcessing')
 const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 
 async function liveSignIn(username, password) {
-  const r = await fetch('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
+  const r = await fetchWithTimeout('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})});
   const result = await readApiResponse(r, 'Sign-in failed');
-  const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
+  const cloud = await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
   cloudRevision = response.revision; cloudBaseData = JSON.parse(JSON.stringify(response.data)); cloudMutationId = ''; db = response.data && typeof response.data === 'object' ? response.data : defaults();
   db = normalizeData(db);
+  const conflict = JSON.parse(localStorage.getItem(CLOUD_CONFLICT_KEY) || 'null');
+  if (conflict) { conflict.remote = JSON.parse(JSON.stringify(db)); conflict.revision = cloudRevision; localStorage.setItem(CLOUD_CONFLICT_KEY, JSON.stringify(conflict)); }
   localStorage.setItem(LS_KEY, JSON.stringify(db));
   me = result.user; licenseInfo=result.license||null; log('login', me.username); shell();
 }
 
 function startupScreen() {
-  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">THE SMART POS</p><h2 style="margin:4px 0">Getting your shop ready</h2><p class="mut">Checking your shop and restoring your session…</p><span class="startup-note">This usually takes just a moment</span></div></div>`;
+  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">THE SMART POS</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p><span class="startup-note">Usually under a few seconds. You can safely retry if it takes longer.</span></div></div>`;
+}
+
+async function fetchWithTimeout(input, init = {}, timeoutMs = 12000) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(input, { ...init, signal: controller.signal }); }
+  catch (err) { if (err.name === 'AbortError') throw new Error('The server took too long to respond. Check your connection and try again.'); throw err; }
+  finally { clearTimeout(timer); }
 }
 
 function liveStartupError(message) {
@@ -256,8 +265,8 @@ document.addEventListener('keydown', e => {
     let status, setup, signed;
     try {
       [status, signed] = await Promise.all([
-        fetch('/api/auth?mode=status',{credentials:'same-origin'}),
-        fetch('/api/auth',{credentials:'same-origin'})
+        fetchWithTimeout('/api/auth?mode=status',{credentials:'same-origin'}),
+        fetchWithTimeout('/api/auth',{credentials:'same-origin'})
       ]);
       const responses = await Promise.all([
         readApiResponse(status, 'Could not check live account setup'),
@@ -277,7 +286,7 @@ document.addEventListener('keydown', e => {
     licenseInfo=signed.license||setup.license||null;
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
-      const cloud=await fetch('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
+      const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) throw new Error('The shop data is missing or invalid. Contact support to restore this shop.');
       cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=normalizeData(response.data);
       applyTenantBranding();

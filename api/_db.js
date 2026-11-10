@@ -5,6 +5,7 @@ const DEFAULT_DB_NAME = 'the_smart_pos';
 
 let clientPromise = null;
 let indexesPromise = null;
+let indexesDatabaseName = '';
 
 function publicError(message, publicMessage, cause) {
   const error = new Error(message);
@@ -59,7 +60,14 @@ function connect(uri) {
     client = new MongoClient(uri, {
       serverSelectionTimeoutMS: 8000,
       connectTimeoutMS: 8000,
-      maxPoolSize: 10
+      // Vercel may run many short lived instances at once. Keep each instance's
+      // pool bounded so an instance burst cannot exhaust Atlas connections.
+      maxPoolSize: Math.max(2, Math.min(20, Number(process.env.MONGODB_MAX_POOL_SIZE) || 5)),
+      minPoolSize: 0,
+      maxConnecting: 2,
+      waitQueueTimeoutMS: 10000,
+      socketTimeoutMS: 30000,
+      retryWrites: true
     });
   } catch (cause) {
     return Promise.reject(publicError(`MongoDB client rejected URI: ${cause.message}`, classifyConnectError(cause), cause));
@@ -71,6 +79,11 @@ function connect(uri) {
 }
 
 async function ensureIndexes(database) {
+  const databaseName = database.databaseName;
+  if (indexesDatabaseName !== databaseName) {
+    indexesPromise = null;
+    indexesDatabaseName = databaseName;
+  }
   if (!indexesPromise) {
     indexesPromise = (async () => {
       // Usernames are unique within a shop. Remove the former global constraint
@@ -80,6 +93,8 @@ async function ensureIndexes(database) {
       try { await database.collection('tenants').dropIndex('slug_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
       await database.collection('tenants').createIndex({ slug: 1 }, { unique: true, sparse: true });
       const optional = [
+        ['pos_state', { updatedAt: -1 }],
+        ['announcements', { tenantIds: 1, active: 1, startsAt: 1, endsAt: 1 }],
         ['users', { tenantId: 1, active: 1 }], ['users', { id: 1, tenantId: 1 }],
         ['superadmins', { email: 1 }, { unique: true }],
         ['superadmin_sessions', { tokenHash: 1 }, { unique: true }], ['superadmin_sessions', { expiresAt: 1 }, { expireAfterSeconds: 0 }],
