@@ -54,7 +54,7 @@ function defaults() {
     brands: ['Apple', 'Samsung', 'Xiaomi', 'Huawei', 'Oppo', 'Vivo', 'Realme', 'Anker', 'JBL', 'Generic'],
     expCats: ['Rent', 'Electricity', 'Internet', 'Salaries', 'Transport', 'Repairs', 'Packaging', 'Bank Charges', 'Marketing', 'Miscellaneous'],
     products: [], suppliers: [], customers: [], sales: [], returns: [], purchases: [], expenses: [], payments: [],
-    moves: [], held: [], shifts: [], attendance: [], audit: [], users: [], quotations: [],
+    moves: [], held: [], shifts: [], attendance: [], audit: [], users: [], quotations: [], quotationTemplates: [],
     counters: { sale: 0, pur: 0, ret: 0, bar: 0, sku: 0, quote: 0 }
   };
 }

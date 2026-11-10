@@ -101,7 +101,7 @@ async function create(database,actor,req,body){
   try{
     await database.collection('tenants').insertOne(tenant);
     await database.collection('users').insertOne(owner);
-    await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business,phone:tenant.contact.phone,address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
+    await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business,phone:tenant.contact.phone,address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],quotationTemplates:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
   }catch(e){
     await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),database.collection('users').deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]);
     if(e.code===11000)throw fail('Username or tenant slug already exists',409,'DUPLICATE');

@@ -651,7 +651,7 @@ function qdOverflow(root) {                    // true when the content runs int
 P.quotations = () => {
   if (qe && qe.dirty) return qeMount();        // an unsaved draft is waiting: bring it back
   qe = null;
-  view(`${hdr('Quotations', '<button class="btn" data-act="newInvoiceDoc">+ New invoice document</button><button class="btn btn-p" data-act="newQuote">+ New quotation</button>')}<div class="filters"><input data-in="quoteSearch" placeholder="Search number or customer" value="${esc(qf.q)}"></div><div id="quoteList"></div>`);
+  view(`${hdr('Quotations', '<button class="btn" data-act="newInvoiceDoc">+ New invoice document</button><button class="btn" data-act="newQuoteTemplate">Quotation templates</button><button class="btn btn-p" data-act="newQuote">+ New quotation</button>')}<div class="filters"><input data-in="quoteSearch" placeholder="Search number or customer" value="${esc(qf.q)}"></div><div id="quoteList"></div>`);
   qeListBody();
 };
 function qeListBody() {
@@ -663,6 +663,30 @@ function qeListBody() {
 I.quoteSearch = v => { qf.q = v; qeListBody(); };
 
 A.newQuote = () => { qe = { d: qdBlank('quotation'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
+A.newQuoteTemplate = () => {
+  const templates = db.quotationTemplates || [];
+  if (!templates.length) return toast('No quotation templates saved yet. Open a quotation and choose Save as template.', 'err');
+  modal('Quotation templates', `<p class="mut">Choose a saved design to start a quotation. Customer and document dates will be blank.</p><div class="tbl-wrap"><table><thead><tr><th>Template</th><th>Items</th><th></th></tr></thead><tbody>${templates.map(t => `<tr><td><b>${esc(t.name)}</b></td><td>${(t.design.items || []).length}</td><td class="r"><button class="btn btn-s btn-p" data-act="useQuoteTemplate" data-id="${esc(t.id)}">Use</button> <button class="btn btn-s btn-d" data-act="delQuoteTemplate" data-id="${esc(t.id)}">Delete</button></td></tr>`).join('')}</tbody></table></div>`, '<button class="btn" data-act="closeModal">Close</button>');
+};
+A.useQuoteTemplate = id => {
+  const t = (db.quotationTemplates || []).find(x => x.id === id); if (!t) return;
+  const d = Object.assign(qdBlank('quotation'), JSON.parse(JSON.stringify(t.design)), { type: 'quotation', no: qdPeekNo('quotation'), date: ymd(), validUntil: '', customerId: '', billName: '', billPhone: '', billAddress: '' });
+  qe = { d, rec: null, isNew: true, drafts: {}, dirty: true }; document.querySelector('.ov')?.remove(); qeMount();
+};
+A.qeSaveTemplate = () => {
+  if (!qe || qe.d.type !== 'quotation') return;
+  formModal('Save quotation template', [{ k: 'name', l: 'Template name', v: 'Quotation design', req: true }], ({ name: raw }) => {
+    const name = String(raw || '').trim().slice(0, 80); if (!name) return 'Enter a template name';
+    if (!db.quotationTemplates) db.quotationTemplates = [];
+    const design = JSON.parse(JSON.stringify(qe.d));
+    ['no','date','validUntil','customerId','billName','billPhone','billAddress'].forEach(k => delete design[k]);
+    const prior = db.quotationTemplates.find(t => t.name.toLowerCase() === name.toLowerCase());
+    const row = { id: prior?.id || uid(), name, design, updatedAt: nowISO() };
+    if (prior) Object.assign(prior, row); else db.quotationTemplates.push(row);
+    save(); toast('Quotation template saved for future use');
+  });
+};
+A.delQuoteTemplate = async id => { const t = (db.quotationTemplates || []).find(x => x.id === id); if (!t || !(await confirmDlg(`Delete quotation template “${t.name}”?`))) return; db.quotationTemplates = db.quotationTemplates.filter(x => x.id !== id); save(); A.newQuoteTemplate(); };
 A.newInvoiceDoc = () => { qe = { d: qdBlank('invoice'), rec: null, isNew: true, drafts: {}, dirty: false }; qeMount(); };
 A.saveQuoteAsInvoiceTemplate = async () => {
   if (!qe || qe.d.type !== 'invoice') return toast('Open an invoice document design first', 'err');
@@ -689,7 +713,7 @@ A.qePvPdf = (id, el) => { const rec = db.quotations.find(x => x.id === id); if (
 function qeMount() {
   qdEnsureStyle();
   const d = qe.d, q = d.type !== 'invoice';
-  view(`${hdr(qe.isNew ? 'New ' + (q ? 'quotation' : 'invoice document') : 'Edit ' + esc(d.no), `<button class="btn" data-act="qeBack">← Back to list</button>${!q ? '<button class="btn" data-act="saveQuoteAsInvoiceTemplate">Save as invoice template</button>' : ''}<button class="btn btn-p" data-act="qeSave">Save</button>`)}
+  view(`${hdr(qe.isNew ? 'New ' + (q ? 'quotation' : 'invoice document') : 'Edit ' + esc(d.no), `<button class="btn" data-act="qeBack">← Back to list</button>${q ? '<button class="btn" data-act="qeSaveTemplate">Save as template</button>' : '<button class="btn" data-act="saveQuoteAsInvoiceTemplate">Save as invoice template</button>'}<button class="btn btn-p" data-act="qeSave">Save</button>`)}
 <div class="qe"><aside class="qe-panel" id="qePanel"></aside><div class="qe-right"><div class="qe-warn" id="qeWarn" hidden>⚠ The content is longer than one A4 page. Shorten the descriptions or terms, or remove items: anything below the page edge is cut off when printing or saving as PDF.</div><main class="qe-stage" id="qeStage"><div class="qe-scaler" id="qeScaler"></div></main></div></div>`);
   qeForm(); qeRender();
 }
