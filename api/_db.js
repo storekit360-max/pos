@@ -90,6 +90,7 @@ async function ensureIndexes(database) {
       // so separate tenant subdomains can independently choose the same username.
       try { await database.collection('users').dropIndex('username_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
       await database.collection('users').createIndex({ tenantId: 1, username: 1 }, { unique: true });
+      await database.collection('users').createIndex({ tenantId: 1, email: 1 }, { unique: true, sparse: true });
       try { await database.collection('tenants').dropIndex('slug_1'); } catch (cause) { if (cause.codeName !== 'IndexNotFound' && cause.code !== 27) throw cause; }
       await database.collection('tenants').createIndex({ slug: 1 }, { unique: true, sparse: true });
       const optional = [

@@ -69,21 +69,23 @@ module.exports = async (req,res) => {
     }
     if (mode === 'register') {
       if (!rootHost) return json(res,403,{error:'Create a shop from the main domain.'});
-      const { name, username, password, business, slug:requestedSlug } = req.body || {};
-      const un = String(username || '').trim().toLowerCase();
+      const { name, email:requestedEmail, password, business, slug:requestedSlug } = req.body || {};
+      const email = String(requestedEmail || '').trim().toLowerCase();
       const shopName=String(business||'').trim(),slug=String(requestedSlug||'').trim().toLowerCase();
       if (hostSlug(req)) return json(res,400,{error:'Create a shop from the main domain, not a shop subdomain'});
       const configuredRoot=rootDomain(req);
       if (!configuredRoot || configuredRoot.endsWith('.vercel.app')) return json(res,503,{error:'Shop subdomains need a custom domain with wildcard DNS and TLS configured in Vercel. A *.vercel.app address cannot be used.'});
-      if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[a-z0-9._-]{3,40}$/.test(un) || String(password || '').length < 10) return json(res,400,{error:'Enter a business name, available POS address, owner name, valid username, and password of at least 10 characters'});
+      if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || String(password || '').length < 10) return json(res,400,{error:'Enter a business name, available POS address, owner name, valid email address, and password of at least 10 characters'});
       if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:`${slug}.${configuredRoot} is already taken`});
-      const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:String(name).trim(),username:un,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
+      const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:String(name).trim(),username:email,email,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
       const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'Trial',userLimit:5,features:[]},trialEndsAt:new Date(Date.now()+14*86400000),graceDays:7,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
       try {
         await database.collection('tenants').insertOne(tenant);
         await users.insertOne(owner);
         await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business:shopName,phone:'',address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
       } catch(error) { await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),users.deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]); if(error.code===11000)return json(res,409,{error:'That username or POS address is already in use'}); throw error; }
+      const handoffToken=crypto.randomBytes(32).toString('base64url'),handoffHash=crypto.createHash('sha256').update(handoffToken).digest('hex');
+      await database.collection('login_handoffs').insertOne({_id:handoffHash,userId:owner.id,tenantId:id,sessionVersion:owner.sessionVersion||0,expiresAt:new Date(Date.now()+10*60*1000),createdAt:new Date()});
       const root=configuredRoot;
       let domainRegistration;
       try { domainRegistration=await registerTenantDomain(slug); }
@@ -91,17 +93,17 @@ module.exports = async (req,res) => {
         console.error('Vercel domain registration failed:',error.message);
         domainRegistration={error:error.code==='VERCEL_DOMAIN_CONFIG' ? error.message : 'Shop created, but Vercel did not confirm the hostname. Check Vercel project domain settings.'};
       }
-      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,domainRegistration,user:{id:owner.id,name:owner.name,username:owner.username,role:owner.role}});
+      return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,handoffToken,domainRegistration,user:{id:owner.id,name:owner.name,email:owner.email,role:owner.role}});
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();
       if (rootHost) {
-        if (!un || !password) return json(res,400,{error:'Enter your username and password.'});
-        const matches=await users.find({username:un,active:true}).limit(20).toArray();
+        if (!un || !password) return json(res,400,{error:'Enter your email and password.'});
+        const matches=await users.find({$or:[{email:un},{username:un}],active:true}).limit(20).toArray();
         const verified=[];
         for (const candidate of matches) if (candidate.hash && await verify(String(password),candidate.hash)) verified.push(candidate);
-        if (!verified.length) return json(res,401,{error:'We couldn’t find a shop account with those details. Check your username and password, or open your shop address.'});
-        if (verified.length>1) return json(res,409,{error:'This username is used by more than one shop. Sign in with your shop address to continue.',code:'MULTIPLE_SHOPS'});
+        if (!verified.length) return json(res,401,{error:'We couldn’t find a shop account with those details. Check your email and password.'});
+        if (verified.length>1) return json(res,409,{error:'This email is linked to more than one shop. Contact support to resolve the duplicate account.' ,code:'MULTIPLE_SHOPS'});
         const user=verified[0], tenant=await database.collection('tenants').findOne({_id:user.tenantId});
         if (!tenant || tenant.status==='deleted' || tenant.slug==='main') return json(res,403,{error:'This account uses the main POS address. Please contact support to confirm your sign-in address.'});
         const entitlement=await license(database,user.tenantId);
