@@ -141,23 +141,38 @@ function showProcessing(title, message) {
 function hideProcessing() { const el = document.getElementById('authProcessing'); if (el) el.hidden = true; }
 async function openNewTenant(tenantUrl, handoffToken) {
   const target = new URL(tenantUrl);
+  if (target.protocol !== 'https:' || !target.hostname) throw new Error('The new POS address is invalid. Please contact support.');
   target.searchParams.set('handoff', handoffToken);
-  // Domain attachment can precede Vercel edge propagation. Poll with backoff
-  // and keep the one-time handoff token until this hostname serves the tenant.
-  const deadline=Date.now()+5*60*1000;
+  // A domain can be attached before DNS/TLS and edge routing have propagated.
+  // Keep checking, but give the user a direct way to retry navigation so a
+  // slow or inconsistent status response cannot strand them on this page.
+  const expectedSlug = target.hostname.slice(0, target.hostname.indexOf('.'));
+  const fallbackAt = Date.now() + 60 * 1000;
+  let fallbackShown = false;
   let attempt=0;
-  while(Date.now()<deadline){
+  while(true){
     try {
       const response=await fetchWithTimeout(`${target.origin}/api/auth?mode=status`,{credentials:'omit',cache:'no-store',redirect:'follow'},10000);
       if(response.ok){
-        const status=await response.json();
-        if(status.tenant?.slug===target.hostname.split('.')[0]){location.replace(target.href);return;}
+        const status=await response.json().catch(()=>null);
+        if(status?.tenant?.slug===expectedSlug){location.replace(target.href);return;}
       }
     } catch {}
+    if (!fallbackShown && Date.now() >= fallbackAt) {
+      fallbackShown = true;
+      const card = document.querySelector('#authProcessing .auth-processing-card');
+      if (card) {
+        const message = card.querySelector('p');
+        if (message) message.textContent = 'Your shop is created. Its secure address is taking longer than expected to activate.';
+        const open = document.createElement('button');
+        open.type = 'button'; open.className = 'btn btn-p'; open.textContent = 'Open shop address';
+        open.addEventListener('click', () => location.assign(target.href));
+        card.append(open);
+      }
+    }
     const delay=Math.min(1500*Math.pow(1.5,attempt++),10000);
     await new Promise(resolve=>setTimeout(resolve,delay));
   }
-  throw new Error('Your shop was created, but its web address is still activating. Retry in a few minutes or open '+target.origin+' and sign in with your new account.');
 }
 const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 
