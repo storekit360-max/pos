@@ -23,7 +23,8 @@
     }
     return d;
   };
-  const toast=(msg,bad=false)=>{notice.replaceChildren();const x=el('div',msg,`toast${bad?' error':''}`);x.setAttribute('role','status');notice.append(x);};
+  let toastTimer;
+  const toast=(msg,bad=false)=>{clearTimeout(toastTimer);notice.replaceChildren();const x=el('div',msg,`toast${bad?' error':''}`);x.setAttribute('role','status');notice.append(x);toastTimer=setTimeout(()=>{if(notice.firstElementChild===x)notice.replaceChildren();},4000);};
   const heading=(title,...actions)=>{const h=el('div',undefined,'title');h.append(el('h1',title));for(const a of actions)h.append(a);main.replaceChildren(h);};
   const card=(title)=>{const c=el('section',undefined,'card');if(title)c.append(el('h2',title));main.append(c);return c;};
   const field=(label,type='text',value='',name='')=>{const l=el('label',undefined,'field');l.append(el('span',label));const x=type==='textarea'?el('textarea'):el(type==='select'?'select':'input');if(type!=='textarea'&&type!=='select')x.type=type;if(value!==undefined)x.value=value;if(name)x.name=name;l.append(x);Object.defineProperty(l,'control',{value:x});return l;};

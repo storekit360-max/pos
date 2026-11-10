@@ -77,10 +77,9 @@
     const lines = [];
     if (info.shellVersion) lines.push(`Installed app <b>v${esc(info.shellVersion)}</b> · screens <b>${esc(info.uiRevision || '')}</b> (${info.uiSource === 'live' ? 'updated live' : 'from installer'})`);
     if (Array.isArray(info.uiHistory) && info.uiHistory.length) {
-      lines.push(`<br><b>Applied screen updates</b><br>${info.uiHistory.slice(0, 10).map(entry => {
-        const date = entry.activatedAt ? new Date(entry.activatedAt).toLocaleString() : 'Date unavailable';
-        return `<span class="mut">${esc(date)} · ${esc(entry.revision)}${entry.notes ? ` · ${esc(entry.notes)}` : ''}</span>`;
-      }).join('<br>')}`);
+      const latest = info.uiHistory[0];
+      const date = latest.activatedAt ? new Date(latest.activatedAt).toLocaleDateString() : 'Date unavailable';
+      lines.push(`<br><b>Applied screen updates</b><br><span class="mut">${esc(date)} · ${esc(latest.revision)}</span>`);
     }
     const r = state.lastResult;
     if (r && !r.ok) lines.push(`<span style="color:var(--bad)">Last check failed: ${esc(r.error)}</span>`);

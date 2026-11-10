@@ -7,7 +7,7 @@ barcode labels, daily auto-backup. Works on **Windows and macOS**. No internet n
 Shop: **The Smart**, Thissa Road, Ranna · 0761048027
 
 ## Install for a shop (client handoff)
-Build with `npm run dist:win` and `npm run dist:mac`. On macOS, the Windows x64 installer can be cross-built with Wine. The Mac command builds Apple Silicon and Intel DMG files. `client-ready/` contains only the Windows setup EXE and Mac DMG files.
+Build with `npm run dist:win` and `npm run dist:mac`. On macOS, the Windows x64 installer can be cross-built with Wine. The Mac command builds Apple Silicon and Intel DMG files. `client-ready/` contains the Windows portable app folder, the Windows setup EXE, and Mac DMG files. For the portable Windows version, send the complete `Windows-Portable/` folder and keep its files together.
 
 ## Run from source (development only)
 Install **Node.js LTS** from https://nodejs.org, then run `npm install` and `npm start`.
@@ -47,7 +47,7 @@ F2 POS · F4 focus scanner box · F9 complete sale · Ctrl+K global search · Es
 USB barcode scanners work as a keyboard: click the scan box, scan, product is added.
 
 ## Build installers
-Run `npm run dist:win` or `npm run dist:mac` to build Windows and macOS installers. On macOS, the Windows x64 build uses Electron Builder's Wine support; macOS builds require a Mac. Use `npm run dist:mac:x64` on Apple Silicon to create an Intel Mac DMG separately. Output goes to `dist/`, then `client-ready/` receives only the versioned Windows setup EXE and macOS DMG files. Unsigned builds may show a security prompt on first launch. The NSIS uninstaller is configured to preserve app data. No default POS logo is bundled; add a shop logo in Settings if desired.
+Run `npm run dist:win` or `npm run dist:mac` to build Windows and macOS installers. On macOS, the Windows x64 build uses Electron Builder's Wine support; macOS builds require a Mac. Use `npm run dist:mac:x64` on Apple Silicon to create an Intel Mac DMG separately. Output goes to `dist/`, then `client-ready/` receives the versioned Windows setup EXE and macOS DMG files. The portable Windows app is delivered as the complete `client-ready/Windows-Portable/` folder. Unsigned builds may show a security prompt on first launch. The NSIS uninstaller is configured to preserve app data. No default POS logo is bundled; add a shop logo in Settings if desired.
 
 ## Deploy the browser POS (Vercel)
 
