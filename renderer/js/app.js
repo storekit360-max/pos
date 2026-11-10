@@ -89,7 +89,7 @@ function loginScreen() {
         const result = await readApiResponse(r, 'Sign-in failed'); licenseInfo=result.license||null;
         const cloud = await fetch('/api/data',{credentials:'same-origin'}), response = await readApiResponse(cloud, 'Could not load cloud data');
         cloudRevision = response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db = response.data && typeof response.data === 'object' ? response.data : defaults(); const df=defaults(); db.settings=Object.assign(df.settings,db.settings && typeof db.settings === 'object' ? db.settings : {}); for(const k in df)if(!(k in db))db[k]=df[k]; db.counters=Object.assign(df.counters,db.counters && typeof db.counters === 'object' ? db.counters : {}); localStorage.setItem(LS_KEY,JSON.stringify(db));
-        me=result.user; log('login',me.username); shell(); return;
+        me=result.user; log('login',me.username); shell(); startCloudPolling(); return;
       } catch (err) { toast(err.message || 'Live sign-in failed','err'); return; }
     }
     const u = db.users.find(x => x.username === $('#lu').value.trim().toLowerCase() && x.active), h = u && await hashPw(u.username, $('#lp').value);
@@ -284,7 +284,7 @@ document.addEventListener('keydown', e => {
       const cached=JSON.parse(localStorage.getItem(LS_KEY)||'null'),pending=JSON.parse(localStorage.getItem(LS_KEY+':pending')||'null');
       if(pending && pending.revision===cloudRevision && cached){db=cached;cloudMutationId=pending.mutationId||uid();applyTenantBranding();}
       else {localStorage.removeItem(LS_KEY+':pending');localStorage.setItem(LS_KEY,JSON.stringify(db));}
-      me=signed.user; licenseInfo=signed.license||null; shell(); if(cloudMutationId)queueCloudSync();
+      me=signed.user; licenseInfo=signed.license||null; shell(); startCloudPolling(); if(cloudMutationId)queueCloudSync();
     } else { db = normalizeData(defaults()); loginScreen(); }
     startupReady = true;
     const liveSubmit = $('#lf button[type="submit"]'); if (liveSubmit) liveSubmit.disabled = false;

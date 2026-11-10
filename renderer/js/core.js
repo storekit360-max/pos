@@ -3,7 +3,7 @@
 const LS_KEY = 'thesmart_pos_v1';
 let db = null, me = null;
 const LIVE_WEB = !window.posApi && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.protocol === 'https:';
-let cloudRevision = 0, cloudSyncTimer = null, cloudSyncBusy = false, cloudRefreshPromise = null, cloudLastError = '', cloudBaseData = null, cloudMutationId = '';
+let cloudRevision = 0, cloudSyncTimer = null, cloudSyncBusy = false, cloudRefreshPromise = null, cloudLastError = '', cloudBaseData = null, cloudMutationId = '', cloudPollTimer = null;
 const A = {}, I = {};                    // click actions (data-act) and input handlers (data-in)
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -88,6 +88,14 @@ async function syncCloud() {
   finally { cloudSyncBusy = false; if (cloudLastError && me && navigator.onLine && !cloudLastError.startsWith('Cloud data changed') && !cloudLastError.startsWith('Your subscription expired')) { clearTimeout(cloudSyncTimer); cloudSyncTimer=setTimeout(syncCloud,5000); } }
 }
 window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); });
+// Tenant POS instances use separate browser storage, so changes from another
+// signed-in session must be fetched from the tenant's cloud snapshot.
+function startCloudPolling() {
+  if (!LIVE_WEB || cloudPollTimer) return;
+  cloudPollTimer = setInterval(() => {
+    if (me && navigator.onLine && !cloudMutationId) refreshCloudThenSync();
+  }, 2000);
+}
 async function refreshCloudThenSync() {
   if (!LIVE_WEB || !me || !navigator.onLine) return;
   if (cloudRefreshPromise) return cloudRefreshPromise;
@@ -100,7 +108,11 @@ async function refreshCloudThenSync() {
       const local=JSON.parse(localStorage.getItem(LS_KEY)||'null');
       if (local && cloudBaseData && JSON.stringify(local) !== JSON.stringify(cloudBaseData)) { cloudLastError='Cloud data changed while this device had unsynced edits. Local copy is preserved; export it before resolving the conflict.'; showCloudSyncStatus(); return; }
       cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudRevision=response.revision;
-      db=response.data; localStorage.setItem(LS_KEY,JSON.stringify(db));
+      db=typeof normalizeData === 'function' ? normalizeData(response.data) : response.data;
+      localStorage.setItem(LS_KEY,JSON.stringify(db));
+      if (typeof applyTheme === 'function') applyTheme();
+      if (typeof syncBranding === 'function') syncBranding();
+      if (typeof nav === 'function' && me) nav(current);
     }
     if (cloudLastError.startsWith('Cloud data changed')) return;
     if (cloudMutationId) queueCloudSync();
