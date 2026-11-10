@@ -12,8 +12,11 @@ module.exports = async (req,res) => {
     const database = await db(), users = database.collection('users');
     const requestedMode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
     const hostTenant = await tenantForRequest(database, req);
+    const requestHost=String(req.headers.host||'').trim().toLowerCase().replace(/:\d+$/,'');
+    const rootHost=!!rootDomain(req)&&requestHost===rootDomain(req);
     if (req.method === 'POST' && !['setup','register','login'].includes(requestedMode) && !authorized(req,res)) return;
     if (req.method === 'GET' && req.url.split('?')[0] === '/api/auth') {
+      if (requestedMode === 'status' && rootHost) return json(res,200,{setupRequired:false,registrationOpen:true,tenantCreationOnly:true});
       if (requestedMode === 'slug') {
         const slug=String(new URL(req.url,'https://pos.invalid').searchParams.get('value')||'').trim().toLowerCase();
         if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
@@ -36,6 +39,7 @@ module.exports = async (req,res) => {
         return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true'});
       }
       const s = session(req); if (!s) return json(res,200,{ authenticated:false });
+      if (rootHost) return json(res,200,{authenticated:false,user:null});
       await ensureMain(database);
       const tid = tenantId(s);
       if (!hostTenant || hostTenant._id !== tid) return json(res,200,{authenticated:false,user:null});
@@ -49,6 +53,7 @@ module.exports = async (req,res) => {
     if (req.method !== 'POST') return json(res,405,{error:'Method not allowed'});
     const mode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
     if (mode === 'setup') {
+      if (rootHost) return json(res,403,{error:'Create a shop from this domain. Shop setup is only available on its shop subdomain.'});
       if (await users.countDocuments() || await database.collection('pos_state').findOne({_id:'main'},{projection:{_id:1}}) || await database.collection('tenants').findOne({},{projection:{_id:1}})) return json(res,409,{error:'Live POS setup is already complete'});
       const { name, username, password, business, phone, address, currency } = req.body || {};
       const un = String(username || '').trim().toLowerCase();
@@ -63,7 +68,7 @@ module.exports = async (req,res) => {
       return json(res,201,{ok:true});
     }
     if (mode === 'register') {
-      if (process.env.POS_REGISTRATION_OPEN !== 'true') return json(res,403,{error:'New account registration is closed. Ask the shop owner to create your account.'});
+      if (!rootHost) return json(res,403,{error:'Create a shop from the main domain.'});
       const { name, username, password, business, slug:requestedSlug } = req.body || {};
       const un = String(username || '').trim().toLowerCase();
       const shopName=String(business||'').trim(),slug=String(requestedSlug||'').trim().toLowerCase();
@@ -90,6 +95,7 @@ module.exports = async (req,res) => {
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();
+      if (rootHost) return json(res,403,{error:'This is the main domain. Create a shop here, then sign in at its shop subdomain.',code:'TENANT_DOMAIN_REQUIRED'});
       await ensureMain(database);
       if (!hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
       const user = await users.findOne({username:un,tenantId:hostTenant._id,active:true});

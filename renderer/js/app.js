@@ -286,11 +286,14 @@ document.addEventListener('keydown', e => {
       cloudLastError = `Could not connect to the live account service. ${err.message || ''}`.trim();
       db = defaults(); liveStartupError(cloudLastError); window.updateUi?.start(); return;
     }
-    if (!setup.setupRequired && !setup.tenant && location.hostname.split('.').length > 2) {
+    if (!setup.setupRequired && !setup.tenant && !setup.tenantCreationOnly && location.hostname.split('.').length > 2) {
       cloudLastError = 'This shop address is not configured. Check the subdomain and try again.';
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
     liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null;
+    if (setup.tenantCreationOnly) {
+      db = normalizeData(defaults()); liveAuthScreen('register'); startupReady = true; window.updateUi?.start(); return;
+    }
     applyTenantBranding();
     licenseInfo=signed.license||setup.license||null;
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
