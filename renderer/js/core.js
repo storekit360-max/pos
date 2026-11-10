@@ -18,6 +18,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const S = () => {
   if (!db || typeof db !== 'object') db = defaults();
   if (!db.settings || typeof db.settings !== 'object' || Array.isArray(db.settings)) db.settings = defaults().settings;
+  if (!Array.isArray(db.payroll)) db.payroll = [];
   return db.settings;
 };
 const money = n => S().currency + ' ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -54,7 +55,7 @@ function defaults() {
     brands: ['Apple', 'Samsung', 'Xiaomi', 'Huawei', 'Oppo', 'Vivo', 'Realme', 'Anker', 'JBL', 'Generic'],
     expCats: ['Rent', 'Electricity', 'Internet', 'Salaries', 'Transport', 'Repairs', 'Packaging', 'Bank Charges', 'Marketing', 'Miscellaneous'],
     products: [], suppliers: [], customers: [], sales: [], returns: [], purchases: [], expenses: [], payments: [],
-    moves: [], held: [], shifts: [], attendance: [], audit: [], users: [], quotations: [], quotationTemplates: [],
+    moves: [], held: [], shifts: [], attendance: [], payroll: [], audit: [], users: [], quotations: [], quotationTemplates: [],
     counters: { sale: 0, pur: 0, ret: 0, bar: 0, sku: 0, quote: 0 }
   };
 }
