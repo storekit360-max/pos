@@ -142,7 +142,20 @@ function hideProcessing() { const el = document.getElementById('authProcessing')
 async function openNewTenant(tenantUrl, handoffToken) {
   const target = new URL(tenantUrl);
   target.searchParams.set('handoff', handoffToken);
-  location.assign(target.href);
+  // Domain attachment can precede Vercel edge propagation. Keep the one-time
+  // handoff token here until the destination responds for this tenant.
+  const deadline=Date.now()+90000;
+  while(Date.now()<deadline){
+    try {
+      const response=await fetchWithTimeout(`${target.origin}/api/auth?mode=status`,{credentials:'omit',cache:'no-store'},8000);
+      if(response.ok){
+        const status=await response.json();
+        if(status.tenant?.slug===target.hostname.split('.')[0]){location.assign(target.href);return;}
+      }
+    } catch {}
+    await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+  throw new Error('Your shop was created, but its web address is still activating. Please wait a few minutes, then open '+target.origin+' or contact support.');
 }
 const isTenantHost = () => liveTenant ? liveTenant.slug !== 'main' : false;
 

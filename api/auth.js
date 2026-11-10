@@ -87,11 +87,22 @@ module.exports = async (req,res) => {
       const handoffToken=crypto.randomBytes(32).toString('base64url'),handoffHash=crypto.createHash('sha256').update(handoffToken).digest('hex');
       await database.collection('login_handoffs').insertOne({_id:handoffHash,userId:owner.id,tenantId:id,sessionVersion:owner.sessionVersion||0,expiresAt:new Date(Date.now()+10*60*1000),createdAt:new Date()});
       const root=configuredRoot;
-      // Domain registration is independent of the tenant records and can take
-      // several seconds. Do not hold up the new shop's secure handoff for it.
-      void registerTenantDomain(slug).catch(error => {
+      // Attach the hostname before returning a URL to the browser. Otherwise
+      // the first visit can arrive before Vercel knows which project serves it.
+      try {
+        await registerTenantDomain(slug);
+      } catch (error) {
         console.error('Vercel domain registration failed:',error.message);
-      });
+        await Promise.allSettled([
+          database.collection('tenants').deleteOne({_id:id}),
+          users.deleteOne({tenantId:id}),
+          database.collection('pos_state').deleteOne({_id:id}),
+          database.collection('login_handoffs').deleteOne({_id:handoffHash})
+        ]);
+        return json(res,503,{error:error.code==='VERCEL_DOMAIN_CONFIG'
+          ? 'Your shop could not be opened because automatic domain setup is not configured. Contact support.'
+          : 'Your shop address could not be activated. Please try again or contact support.'});
+      }
       return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,handoffToken,user:{id:owner.id,name:owner.name,email:owner.email,role:owner.role}});
     }
     if (mode === 'login') {
