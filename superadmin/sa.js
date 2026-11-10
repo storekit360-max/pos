@@ -500,11 +500,11 @@
     const mine=++dashRun,editable=['root','billing'].includes(admin.role);
     // ---- payment details shown to shops ----
     const bank=card('Payment details shown to shops');
-    bank.append(el('p','Shops see the amount due and these bank details after they sign in once their subscription is unpaid, and during the last 7 days before the due date. Billing cycle: 30 days from the shop creation date.','muted'));
+    bank.append(el('p','Shops can keep using the POS while payment is due. The amount, bank details, and this contact number appear in the shop until payment is confirmed and activated here. Billing cycle: 30 days from the shop creation date.','muted'));
     let settings;
     try{settings=(await api('billing.settings.get')).settings;}catch(e){if(!e.handled)bank.append(el('p',e.message,'error-text'));return;}
     if(mine!==dashRun)return;
-    const f={monthlyFee:field('Monthly fee (per 30 days)','number',settings.monthlyFee,'monthlyFee'),currency:field('Currency','text',settings.currency,'currency'),bankName:field('Bank name','text',settings.bankName,'bankName'),accountName:field('Account holder name','text',settings.accountName,'accountName'),accountNumber:field('Account number','text',settings.accountNumber,'accountNumber'),branch:field('Branch','text',settings.branch,'branch'),swift:field('SWIFT / BIC (optional)','text',settings.swift,'swift'),instructions:field('Payment instructions (optional)','textarea',settings.instructions,'instructions')};
+    const f={monthlyFee:field('Monthly fee (per 30 days)','number',settings.monthlyFee,'monthlyFee'),currency:field('Currency','text',settings.currency,'currency'),bankName:field('Bank name','text',settings.bankName,'bankName'),accountName:field('Account holder name','text',settings.accountName,'accountName'),accountNumber:field('Account number','text',settings.accountNumber,'accountNumber'),branch:field('Branch','text',settings.branch,'branch'),swift:field('SWIFT / BIC (optional)','text',settings.swift,'swift'),supportContact:field('Payment support contact number','tel',settings.supportContact,'supportContact'),instructions:field('Payment instructions (optional)','textarea',settings.instructions,'instructions')};
     f.monthlyFee.control.min='1';f.monthlyFee.control.step='any';
     const r1=rowIn(bank),r2=rowIn(bank),r3=rowIn(bank);
     r1.append(f.monthlyFee,f.currency);r2.append(f.bankName,f.accountName,f.accountNumber,f.branch,f.swift);r3.append(f.instructions);

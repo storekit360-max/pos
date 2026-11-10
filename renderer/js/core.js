@@ -108,7 +108,6 @@ async function syncCloud() {
   if (!LIVE_WEB || !me || cloudSyncBusy || !navigator.onLine) return;
   cloudSyncBusy = true;
   try {
-    if (typeof licenseInfo !== 'undefined' && licenseInfo?.state === 'expired') { cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; showCloudSyncStatus(); return; }
     const local = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
     if (!cloudBaseData) { await refreshCloudThenSync(); return; }
     if (!cloudMutationId || !local) return;

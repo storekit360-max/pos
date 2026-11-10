@@ -8,7 +8,7 @@ const CYCLE_DAYS = 30;
 const DEFAULT_FEE = 999;
 const DEFAULT_CURRENCY = 'LKR';
 const SETTINGS_ID = 'billing';
-const DEFAULT_SETTINGS = { monthlyFee: DEFAULT_FEE, currency: DEFAULT_CURRENCY, bankName: '', accountName: '', accountNumber: '', branch: '', swift: '', instructions: '' };
+const DEFAULT_SETTINGS = { monthlyFee: DEFAULT_FEE, currency: DEFAULT_CURRENCY, bankName: '', accountName: '', accountNumber: '', branch: '', swift: '', instructions: '', supportContact: '' };
 
 const asDate = v => { const d = v ? new Date(v) : null; return d && !Number.isNaN(d.getTime()) ? d : null; };
 
@@ -70,21 +70,20 @@ function summary(tenant, settings, now = Date.now()) {
   };
 }
 
-const bankOf = s => ({ bankName: s.bankName || '', accountName: s.accountName || '', accountNumber: s.accountNumber || '', branch: s.branch || '', swift: s.swift || '', instructions: s.instructions || '' });
+const bankOf = s => ({ bankName: s.bankName || '', accountName: s.accountName || '', accountNumber: s.accountNumber || '', branch: s.branch || '', swift: s.swift || '', instructions: s.instructions || '', supportContact: s.supportContact || '' });
 
 // Shop-facing view. Bank details are only included once payment is near or overdue.
 function view(tenant, settings, state) {
   const s = summary(tenant, settings);
   if (s.exempt) return { exempt: true };
-  const showBank = state === 'expired' || state === 'grace' || (s.daysLeft !== null && s.daysLeft <= 7);
-  return { ...s, locked: state === 'expired', ...(showBank ? { bank: bankOf(settings) } : {}) };
+  return { ...s, locked: false, ...(state === 'expired' ? { bank: bankOf(settings) } : {}) };
 }
 
 function cleanSettings(b) {
   const text = (v, n) => String(v ?? '').trim().slice(0, n);
   const fee = Number(b.monthlyFee);
   if (!Number.isFinite(fee) || fee <= 0 || fee > 100000000) throw Object.assign(new Error('Monthly fee must be a positive number'), { status: 400, code: 'VALIDATION' });
-  return { monthlyFee: Math.round(fee * 100) / 100, currency: text(b.currency || DEFAULT_CURRENCY, 8).toUpperCase() || DEFAULT_CURRENCY, bankName: text(b.bankName, 120), accountName: text(b.accountName, 120), accountNumber: text(b.accountNumber, 60), branch: text(b.branch, 120), swift: text(b.swift, 40), instructions: text(b.instructions, 1000) };
+  return { monthlyFee: Math.round(fee * 100) / 100, currency: text(b.currency || DEFAULT_CURRENCY, 8).toUpperCase() || DEFAULT_CURRENCY, bankName: text(b.bankName, 120), accountName: text(b.accountName, 120), accountNumber: text(b.accountNumber, 60), branch: text(b.branch, 120), swift: text(b.swift, 40), instructions: text(b.instructions, 1000), supportContact: text(b.supportContact, 80) };
 }
 
 module.exports = { DAY, CYCLE_DAYS, DEFAULT_FEE, SETTINGS_ID, asDate, anchoredNext, dueAt, overdueCycles, feeFor, getSettings, ensure, summary, view, bankOf, cleanSettings };

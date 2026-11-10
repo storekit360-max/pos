@@ -12,8 +12,8 @@ const publicUser = (u) => { const out = { ...u }; delete out._id; delete out.has
 async function licenseView(database, tid, entitlement, opts = {}) {
   const [rows, notices] = await Promise.all([database.collection('superadmin_settings').find({_id:{$in:['global',Billing.SETTINGS_ID]}}).toArray(), announcements(database,tid)]);
   const settings = rows.find(x=>x._id==='global'), { _id: _skip, ...billingSettings } = rows.find(x=>x._id===Billing.SETTINGS_ID) || {};
-  const support = settings?.supportContact || 'Contact support to renew.';
-  const view = {state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'',announcements:notices};
+  const support = billingSettings.supportContact || settings?.supportContact || '';
+  const view = {state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?'Subscription payment is due. Pay the outstanding amount below; access remains available while super admin confirms payment.':entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'',announcements:notices};
   // The public pre-login status call never carries amounts or bank details.
   if (!opts.publicView && entitlement.tenant) view.billing = Billing.view(entitlement.tenant, { monthlyFee: Billing.DEFAULT_FEE, currency: 'LKR', ...billingSettings }, entitlement.state);
   return view;
