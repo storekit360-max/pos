@@ -263,7 +263,7 @@ function parseCSV(t) {
 }
 function pickFile(accept, cb) { const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.onchange = () => { const f = i.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => cb(r.result, f); r.readAsText(f); }; i.click(); }
 function applyTheme() {
-  const accent = defaults().settings.accent;
+  const accent = S().accent || defaults().settings.accent;
   document.documentElement.style.setProperty('--acc', accent);
   document.documentElement.style.setProperty('--acc2', accent);
   document.body.classList.toggle('dark', !!S().dark);

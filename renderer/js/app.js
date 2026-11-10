@@ -129,7 +129,7 @@ function applyTenantBranding() {
   const branding = liveTenant.branding;
   db.settings.business = branding.business || db.settings.business;
   db.settings.tagline = branding.tagline || db.settings.tagline;
-  db.settings.accent = defaults().settings.accent;
+  db.settings.accent = branding.accent || db.settings.accent || defaults().settings.accent;
   applyTheme();
 }
 function showProcessing(title, message) {
