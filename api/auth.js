@@ -87,22 +87,23 @@ module.exports = async (req,res) => {
     }
     if (mode === 'register') {
       if (!rootHost) return json(res,403,{error:'Create a shop from the main domain.'});
-      const { name, email:requestedEmail, password, business, slug:requestedSlug } = req.body || {};
+      const { name, email:requestedEmail, password, business, slug:requestedSlug, phone:requestedPhone } = req.body || {};
       const email = String(requestedEmail || '').trim().toLowerCase();
       const shopName=String(business||'').trim(),slug=String(requestedSlug||'').trim().toLowerCase();
       if (hostSlug(req)) return json(res,400,{error:'Create a shop from the main domain, not a shop subdomain'});
       const configuredRoot=rootDomain(req);
       if (!configuredRoot || configuredRoot.endsWith('.vercel.app')) return json(res,503,{error:'Shop subdomains need a custom domain with wildcard DNS and TLS configured in Vercel. A *.vercel.app address cannot be used.'});
       const ownerName=String(name||'').trim();
-      if (shopName.length<2 || shopName.length>120 || !/^[\p{L}\p{N}][\p{L}\p{N} .,'&()_-]*$/u.test(shopName) || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || ownerName.length<2 || ownerName.length>80 || !/^[\p{L}][\p{L} .'-]*$/u.test(ownerName) || email.length>254 || !/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email) || String(password || '').length < 10 || String(password).length > 200) return json(res,400,{error:'Enter a valid business name, POS address, owner name, email address, and password of 10–200 characters'});
+      const phone=String(requestedPhone||'').trim();
+      if (shopName.length<2 || shopName.length>120 || !/^[\p{L}\p{N}][\p{L}\p{N} .,'&()_-]*$/u.test(shopName) || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || ownerName.length<2 || ownerName.length>80 || !/^[\p{L}][\p{L} .'-]*$/u.test(ownerName) || phone.length<5 || phone.length>40 || !/^[+0-9() .-]+$/.test(phone) || phone.replace(/\D/g,'').length<5 || email.length>254 || !/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email) || String(password || '').length < 10 || String(password).length > 200) return json(res,400,{error:'Enter valid business, POS address, owner name, contact number, email address, and password details'});
       if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:`${slug}.${configuredRoot} is already taken`});
       if (await users.findOne({email})) return json(res,409,{error:'This email already has a POS account. Sign in with your email to open your existing shop.' ,code:'EMAIL_IN_USE'});
       const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:ownerName,username:email,email,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
-      const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'24-hour trial',userLimit:5,features:[]},trialEndsAt:new Date(now.getTime()+86400000),graceDays:0,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
+      const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'24-hour trial',userLimit:5,features:[]},trialEndsAt:new Date(now.getTime()+86400000),graceDays:0,staffCount:1,contact:{name:ownerName,email,phone},flags:{},createdAt:now,updatedAt:now};
       try {
         await database.collection('tenants').insertOne(tenant);
         await users.insertOne(owner);
-        await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business:shopName,phone:'',address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
+        await database.collection('pos_state').insertOne({_id:id,data:{v:1,settings:{business:shopName,phone,address:'',currency:'LKR'},categories:[],brands:[],expCats:[],products:[],suppliers:[],customers:[],sales:[],returns:[],purchases:[],expenses:[],payments:[],moves:[],held:[],shifts:[],attendance:[],audit:[],quotations:[],users:[],counters:{sale:0,pur:0,ret:0,bar:0,sku:0,quote:0}},revision:0,updatedAt:now});
       } catch(error) { await Promise.allSettled([database.collection('tenants').deleteOne({_id:id}),users.deleteOne({tenantId:id}),database.collection('pos_state').deleteOne({_id:id})]); if(error.code===11000)return json(res,409,{error:'That username or POS address is already in use'}); throw error; }
       const handoffToken=crypto.randomBytes(32).toString('base64url'),handoffHash=crypto.createHash('sha256').update(handoffToken).digest('hex');
       await database.collection('login_handoffs').insertOne({_id:handoffHash,userId:owner.id,tenantId:id,sessionVersion:owner.sessionVersion||0,expiresAt:new Date(Date.now()+10*60*1000),createdAt:new Date()});

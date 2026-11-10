@@ -278,9 +278,9 @@
       if(mine!==dashRun)return;
       out.replaceChildren();
       if(!d.items.length){out.append(el('p','No tenants match.','empty'));return;}
-      out.append(table(['Shop','Slug','Status','Plan','Staff','Expires','Created',''],d.items,(tr,t)=>{
+      out.append(table(['Shop','Slug','Contact number','Status','Plan','Staff','Expires','Created',''],d.items,(tr,t)=>{
         const td=el('td');td.append(pill(t.status));
-        tr.append(el('td',t.name),el('td',t.slug||'—'),td,el('td',t.planSnapshot?.name||'—'),el('td',`${num(t.activeStaff)} / ${num(t.planSnapshot?.userLimit)}`),el('td',fmtDay(expiryOf(t))),el('td',fmtDay(t.createdAt)));
+        tr.append(el('td',t.name),el('td',t.slug||'—'),el('td',t.contact?.phone||'—'),td,el('td',t.planSnapshot?.name||'—'),el('td',`${num(t.activeStaff)} / ${num(t.planSnapshot?.userLimit)}`),el('td',fmtDay(expiryOf(t))),el('td',fmtDay(t.createdAt)));
         const a=el('td',undefined,'actions');a.append(btn('Open',()=>{location.hash=`#/tenants/${encodeURIComponent(t._id)}`;}));tr.append(a);
       }));
       pager(out,tState,d.total,load);
@@ -320,7 +320,7 @@
     heading(t.name,...head);
 
     const ov=card('Overview'),grid=el('div',undefined,'grid kpis');
-    for(const [l,v] of [['Status',cap(t.status)],['Plan',t.planSnapshot?.name||'—'],['Staff (active / limit)',`${num(u.activeStaff)} / ${num(t.planSnapshot?.userLimit)}`],['All staff accounts',num(u.users)],['Expires',fmtDay(expiryOf(t))],['Grace days',num(t.graceDays)],['POS data',mbText(u.dataBytes)],['Last activity',fmt(u.lastActiveAt)],['Created',fmtDay(t.createdAt)]]){
+    for(const [l,v] of [['Status',cap(t.status)],['Plan',t.planSnapshot?.name||'—'],['Contact number',contact.phone||'—'],['Staff (active / limit)',`${num(u.activeStaff)} / ${num(t.planSnapshot?.userLimit)}`],['All staff accounts',num(u.users)],['Expires',fmtDay(expiryOf(t))],['Grace days',num(t.graceDays)],['POS data',mbText(u.dataBytes)],['Last activity',fmt(u.lastActiveAt)],['Created',fmtDay(t.createdAt)]]){
       const c=el('div',undefined,'card metric');c.append(el('small',l),el('b',v));grid.append(c);
     }
     ov.append(grid);
