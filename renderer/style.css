@@ -17,9 +17,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .nav a:hover{background:#1b1f29;color:#fff}
 .nav a.on{background:var(--acc);color:#fff;font-weight:600}
 .me{padding:12px 16px;border-top:1px solid #222733;font-size:12px}
-.main{display:flex;flex-direction:column;min-width:0;height:100vh}
-.top{display:flex;gap:12px;align-items:center;padding:12px 22px;background:var(--card);border-bottom:1px solid var(--bd);min-width:0}
-.top .sp{flex:1}.clock{color:var(--mut);font-size:13px}
+.main{display:flex;flex-direction:column;min-width:0;height:100vh;height:100dvh}
+.top{display:flex;flex:0 0 auto;gap:12px;align-items:center;padding:12px 22px;background:var(--card);border-bottom:1px solid var(--bd);min-width:0}
+.top .sp{flex:1}.clock{color:var(--mut);font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#activationRemaining{display:inline-block;min-width:290px;text-align:right}
 .view{padding:22px;overflow:auto;overflow-x:hidden;flex:1;min-width:0;overscroll-behavior:contain}
 h1{font-size:22px;margin:0}
 .hdr{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}.hdr .sp{flex:1}
@@ -88,6 +89,7 @@ label.f.ck{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:va
   .top #gs{order:3;flex:1 1 100%;width:100%!important}
   .top .sp{display:none}
   .clock{margin-left:auto;font-size:11px}
+  #activationRemaining{min-width:0;text-align:right}
   .view{padding:12px;overscroll-behavior:contain}
   .side{order:2;flex:0 0 auto;height:62px;height:calc(62px + env(safe-area-inset-bottom));overflow:hidden;padding-bottom:env(safe-area-inset-bottom);border-top:1px solid #222733;min-height:0}
   .brand,.me{display:none}
