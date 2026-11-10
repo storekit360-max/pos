@@ -36,7 +36,7 @@ A.nav = id => nav(id);
 function shell() {
   hideProcessing();
   applyTheme();
-  document.title = 'POS';
+  document.title = `${S().business || 'POS360'} · POS360`;
   $('#app').innerHTML = `<div class="shell"><aside class="side"><div class="brand"><img ${S().logoData ? `src="${esc(S().logoData)}"` : ''} alt="Business logo"><div><b>${esc(S().business)}</b><small>${esc(S().tagline || '')}</small></div></div>
 <nav class="nav">${NAV.filter(allowed).map(n => `<a data-act="nav" data-id="${n[0]}"><span>${n[2]}</span> <span>${n[1]}</span></a>`).join('')}</nav>
 <div class="me"><b>${esc(me.name)}</b> (${me.role})<br><button class="btn btn-s" data-act="attendanceSelf" ${attendanceSelfAction() === 'Attendance recorded' ? 'disabled' : ''}>${attendanceSelfAction()}</button><br><a style="cursor:pointer;color:var(--acc)" data-act="logout">Log out</a><br><small style="display:block;margin-top:10px;color:#8b93a3">Developed by ZenStack360</small></div></aside>
@@ -67,7 +67,7 @@ function renderLiveNotices() {
 }
 
 function syncBranding() {
-  document.title = 'POS';
+  document.title = `${S().business || 'POS360'} · POS360`;
   const brand = document.querySelector('.brand');
   if (brand) {
     const img = brand.querySelector('img'), name = brand.querySelector('b'), tagline = brand.querySelector('small');
@@ -220,7 +220,7 @@ async function completeLoginHandoff() {
 }
 
 function startupScreen() {
-  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">THE SMART POS</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p><span class="startup-note">Usually under a few seconds. You can safely retry if it takes longer.</span></div></div>`;
+  $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS360</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">POS360</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p><span class="startup-note">Usually under a few seconds. You can safely retry if it takes longer.</span></div></div>`;
 }
 
 async function fetchWithTimeout(input, init = {}, timeoutMs = 12000) {

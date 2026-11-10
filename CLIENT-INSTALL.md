@@ -1,18 +1,18 @@
-# The Smart POS — Client installation
+# POS360 — Client installation
 
-This folder contains direct-send installers for The Smart POS. Send the single installer that matches the client's computer. The POS works offline after first setup.
+This folder contains direct-send installers for POS360. Send the single installer that matches the client's computer. The POS works offline after first setup.
 
 ## Windows 10/11 (64-bit)
 
-1. Run the current **The Smart POS Setup** installer and follow the installer. Choose an install location if needed.
-2. Start **The Smart POS** from the Start menu or desktop shortcut.
+1. Run the current **POS360 Setup** installer and follow the installer. Choose an install location if needed.
+2. Start **POS360** from the Start menu or desktop shortcut.
 3. If Windows SmartScreen appears for this unsigned app, choose **More info → Run anyway**.
 4. On first launch, enter the shop details and create the owner account.
 
 ## macOS
 
 1. Use the current **arm64** DMG for an Apple Silicon (M-series) Mac, or the standard DMG for an Intel Mac.
-2. Open the DMG and drag **The Smart POS** into **Applications**.
+2. Open the DMG and drag **POS360** into **Applications**.
 3. These builds are unsigned. If macOS blocks the app, Control-click it in Applications, choose **Open**, then confirm.
 4. On first launch, enter the shop details and create the owner account.
 

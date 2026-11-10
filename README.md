@@ -1,4 +1,4 @@
-# The Smart POS — Mobile & Accessories Shop
+# POS360 — Mobile & Accessories Shop
 **Developed by ZenStack360**
 
 Offline POS, inventory, IMEI tracking, suppliers, purchases, customers, expenses, cash register, reports,
