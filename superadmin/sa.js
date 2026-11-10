@@ -609,10 +609,12 @@
     };
     upload('Main POS logo','siteLogo','image/png,image/jpeg,image/webp','PNG, JPEG or WebP. Used as the default POS logo when a shop has not set its own. Maximum 1 MB.');
     upload('Site favicon','siteFavicon','image/png,image/jpeg,image/webp,image/x-icon,image/vnd.microsoft.icon','PNG, JPEG, WebP or ICO. Appears in browser tabs on the root POS domain and tenant subdomains. Maximum 1 MB.');
-    const actions=row();
-    actions.append(btn('Clear logo',()=>{previews[0].clear();}));
-    actions.append(btn('Clear favicon',()=>{previews[1].clear();}));
-    const save=btn('Save settings',()=>busy(save,async()=>{const payload={defaultTrialDays:settings.defaultTrialDays,defaultGraceDays:settings.defaultGraceDays,supportContact:settings.supportContact,siteLogo:previews[0].get(),siteFavicon:previews[1].get(),smsOAuthEndpoint:smsFields.smsOAuthEndpoint.control.value.trim(),smsHttpEndpoint:smsFields.smsHttpEndpoint.control.value.trim(),smsApiToken:smsFields.smsApiToken.control.value,smsAdminPhone:smsFields.smsAdminPhone.control.value.trim()};await api('settings.save',payload);settings={...payload,smsApiToken:'',smsTokenConfigured:settings.smsTokenConfigured||!!payload.smsApiToken};smsFields.smsApiToken.control.value='';toast('Settings saved');}), 'primary');actions.append(save);
+    const brandingActions=rowIn(c);
+    brandingActions.append(btn('Clear logo',()=>{previews[0].clear();}));
+    brandingActions.append(btn('Clear favicon',()=>{previews[1].clear();}));
+    const saveBranding=btn('Save logo and favicon',()=>busy(saveBranding,async()=>{await api('settings.branding.save',{siteLogo:previews[0].get(),siteFavicon:previews[1].get()});toast('Site logo and favicon saved');}), 'primary');brandingActions.append(saveBranding);
+    const smsActions=rowIn(sms);
+    const saveSms=btn('Save Text.lk SMS settings',()=>busy(saveSms,async()=>{const payload={smsOAuthEndpoint:smsFields.smsOAuthEndpoint.control.value.trim(),smsHttpEndpoint:smsFields.smsHttpEndpoint.control.value.trim(),smsApiToken:smsFields.smsApiToken.control.value,smsAdminPhone:smsFields.smsAdminPhone.control.value.trim()};const d=await api('settings.sms.save',payload);settings={...settings,...d,smsApiToken:''};smsFields.smsApiToken.control.value='';smsFields.smsApiToken.control.placeholder=settings.smsTokenConfigured?'API token (saved; leave blank to keep it)':'API token';toast('Text.lk SMS settings saved');}), 'primary');smsActions.append(saveSms);
   }
 
   /* ================= Routing ================= */
