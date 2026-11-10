@@ -39,13 +39,17 @@ async function activate(database,actor,req,b){
   if(!tenant)throw bad('Tenant not found',404,'NOT_FOUND');
   if(['deleted','cancelled'].includes(tenant.status))throw bad(`A ${tenant.status} shop cannot be activated. Restore it first.`,409,'CONFLICT');
   if(tenant.billing?.exempt)throw bad('This shop is exempt from billing. Turn the exemption off first.',409,'CONFLICT');
-  const now=Date.now(),due=Billing.dueAt(tenant),overdue=Billing.overdueCycles(due,now),fee=Billing.feeFor(tenant,settings);
+ const now=Date.now(),due=Billing.dueAt(tenant),overdue=Billing.overdueCycles(due,now),fee=Billing.feeFor(tenant,settings);
   const rawDays=Number(b.days),days=Math.floor(Number.isFinite(rawDays)&&rawDays>0?rawDays:(Number(b.cycles)>0?Number(b.cycles)*Billing.CYCLE_DAYS:Billing.CYCLE_DAYS));
   if(days<1||days>3650)throw bad('Activation period must be between 1 and 3650 days');
   const amount=b.amount===undefined||b.amount===''||b.amount===null?fee*days/Billing.CYCLE_DAYS:Number(b.amount);
   if(!Number.isFinite(amount)||amount<=0||amount>1000000000)throw bad('Enter the amount received');
   // Default starts at the current due date; "today" starts a fresh period now.
-  const base=fromToday?new Date(Math.max(now,due?due.getTime():0)):(due||new Date(now)),expiresAt=new Date(base.getTime()+days*Billing.DAY);
+  const createdAt=Billing.asDate(tenant.createdAt)||new Date(now);
+  // Keep the subscription anchored to POS creation. A renewal extends from the later
+  // of its due date or current time so paid access is never shortened.
+  const base=fromToday?new Date(now):(due&&due>new Date(now)?due:due||Billing.anchoredNext(createdAt,now));
+  const expiresAt=new Date(base.getTime()+days*Billing.DAY);
   const payment={_id:crypto.randomUUID(),tenantId:id,kind:'subscription',amount,currency:settings.currency||'LKR',days,cycles:days/Billing.CYCLE_DAYS,method,reference,periodStart:base,periodEnd:expiresAt,recordedBy:actor.id,createdAt:new Date(),voidedAt:null};
   await database.collection('payments').insertOne(payment,{session});
   const changed=await database.collection('tenants').updateOne({_id:id},{$set:{expiresAt,status:'active',updatedAt:new Date(),'billing.lastPaidAt':payment.createdAt,'billing.lastPaymentId':payment._id,'billing.lastPaymentAmount':amount}},{session});

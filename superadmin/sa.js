@@ -334,14 +334,15 @@
     // Edit form
     const edit=card('Shop details'),r1=rowIn(edit),r2=rowIn(edit),r3=rowIn(edit);
     const name=field('Shop name','text',t.name),cName=field('Contact name','text',contact.name||''),cEmail=field('Contact email','email',contact.email||''),phone=field('Phone','tel',contact.phone||'');
-    const planName=field('Plan name','text',t.planSnapshot?.name||'Standard'),limit=field('Staff limit','number',t.planSnapshot?.userLimit??5),grace=field('Grace days','number',t.graceDays??7),expiry=field('Expiry date','date',(t.status==='trial'?t.trialEndsAt:t.expiresAt)?new Date(t.status==='trial'?t.trialEndsAt:t.expiresAt).toISOString().slice(0,10):'');
+    const expiryValue=t.status==='trial'?t.trialEndsAt:t.expiresAt, expiryDate=expiryValue?new Date(expiryValue):null;
+    const planName=field('Plan name','text',t.planSnapshot?.name||'Standard'),limit=field('Staff limit','number',t.planSnapshot?.userLimit??5),grace=field('Grace days','number',t.graceDays??7),expiry=field('Expiry date','date',expiryDate?expiryDate.toISOString().slice(0,10):''),expiryTime=field('Expiry time','time',expiryDate?expiryDate.toISOString().slice(11,16):'23:59');
     const notes=field('Internal notes','textarea',t.notes||'');
-    r1.append(name,cName,cEmail,phone);r2.append(planName,limit,grace,expiry);r3.append(notes);
-    if(!can.tenantEdit()){for(const f of [name,cName,cEmail,phone,planName,limit,grace,expiry,notes])f.control.disabled=true;}
+    r1.append(name,cName,cEmail,phone);r2.append(planName,limit,grace,expiry,expiryTime);r3.append(notes);
+    if(!can.tenantEdit()){for(const f of [name,cName,cEmail,phone,planName,limit,grace,expiry,expiryTime,notes])f.control.disabled=true;}
     else{
       const save=btn('Save changes',()=>busy(save,async()=>{
         const body={id,name:name.control.value,notes:notes.control.value,contact:{...contact,name:cName.control.value,email:cEmail.control.value,phone:phone.control.value},planName:planName.control.value,userLimit:Number(limit.control.value),graceDays:Number(grace.control.value)};
-        if(expiry.control.value){const iso=new Date(expiry.control.value+'T23:59:59').toISOString();if(t.status==='trial')body.trialEndsAt=iso;else body.expiresAt=iso;}
+        if(expiry.control.value){const iso=new Date(`${expiry.control.value}T${expiryTime.control.value||'23:59'}:00`).toISOString();if(t.status==='trial')body.trialEndsAt=iso;else body.expiresAt=iso;}
         await api('tenants.update',body);toast('Tenant saved');await tenantDetail(id);
       }),'primary');
       edit.append(save);
@@ -557,10 +558,10 @@
       const days=field('Activation period (days)','number','30','days'),amount=field(`Amount received (${t.currency})`,'number',String(t.monthlyFee),'amount'),method=field('Payment method','select'),ref=field('Bank reference / slip number','text','','reference'),from=field('Count the activation period from','select');
       days.control.min='1';days.control.max='3650';amount.control.step='any';
       options(method.control,[['bank transfer','Bank transfer'],['cash','Cash'],['card','Card'],['other','Other']],'bank transfer');
-      options(from.control,[['due','The due date (keeps the billing day)'],['today','Today']],'due');
+      options(from.control,[['due','POS creation date billing schedule (recommended)'],['today','Today']],'due');
       let edited=false;amount.control.addEventListener('input',()=>{edited=true;});
       days.control.addEventListener('input',()=>{if(!edited)amount.control.value=String(t.monthlyFee*(Number(days.control.value)||0)/30);});
-      const intro=`${t.name}: current due date ${fmtDay(t.dueAt)}. Choose the paid access period. Confirm the money is in your bank account first. The POS unlocks immediately.`;
+      const intro=`${t.name}: created ${fmtDay(t.billingStart)} · current due date ${fmtDay(t.dueAt)} · amount due ${money(t.currency,t.amountDue)}. Confirm the manual payment before activating. Default access is 30 days from the existing creation-date billing schedule; you can change the period.`;
       dialog('Confirm payment and activate',intro,[days,amount,method,ref,from],'Activate POS',async()=>{
         const d=await api('billing.activate',{tenantId:t._id,days:Number(days.control.value),amount:Number(amount.control.value),method:method.control.value,reference:ref.control.value,from:from.control.value});
         closeModal();toast(`${t.name} is active until ${fmtDay(d.expiresAt)}`);await refreshAll();
