@@ -147,7 +147,7 @@ async function openNewTenant(tenantUrl, handoffToken) {
   // Keep checking, but give the user a direct way to retry navigation so a
   // slow or inconsistent status response cannot strand them on this page.
   const expectedSlug = target.hostname.slice(0, target.hostname.indexOf('.'));
-  const fallbackAt = Date.now() + 60 * 1000;
+  const fallbackAt = Date.now() + 2 * 1000;
   let fallbackShown = false;
   let attempt=0;
   while(true){
@@ -163,11 +163,19 @@ async function openNewTenant(tenantUrl, handoffToken) {
       const card = document.querySelector('#authProcessing .auth-processing-card');
       if (card) {
         const message = card.querySelector('p');
-        if (message) message.textContent = 'Your shop is created. Its secure address is taking longer than expected to activate.';
-        const open = document.createElement('button');
-        open.type = 'button'; open.className = 'btn btn-p'; open.textContent = 'Open shop address';
-        open.addEventListener('click', () => location.assign(target.href));
-        card.append(open);
+        if (message) message.textContent = 'Your POS address is ready. Open it to sign in to your new shop.';
+        const open = document.createElement('a');
+        open.className = 'btn btn-p'; open.textContent = 'Open your POS';
+        open.href = target.href;
+        open.style.display = 'inline-block';
+        open.style.margin = '12px 0';
+        open.style.textDecoration = 'none';
+        open.setAttribute('aria-label', `Open your POS at ${target.origin}`);
+        const address = document.createElement('p');
+        address.className = 'pos-address';
+        address.style.cssText = 'margin:0 0 10px;overflow-wrap:anywhere;font-size:13px';
+        address.textContent = target.origin;
+        card.append(open, address);
       }
     }
     const delay=Math.min(1500*Math.pow(1.5,attempt++),10000);
@@ -273,7 +281,7 @@ function liveAuthScreen(view, opts = {}) {
     f.business.addEventListener('input',()=>{if(!manuallyEdited){slugInput.value=slugify(f.business.value);scheduleCheck();}});
     slugInput.addEventListener('input',()=>{manuallyEdited=true;slugInput.value=slugify(slugInput.value);scheduleCheck();});
     f.business.focus();
-    $('#liveRegister').onsubmit = async e => { e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); if(f.password.value!==f.password2.value)return toast('Passwords do not match','err'); const email=f.email.value.trim().toLowerCase(),slug=slugInput.value.trim().toLowerCase(); if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return toast('Enter a valid POS address with at least 2 letters, numbers, or dashes','err');btn.disabled=true; showProcessing('Creating your POS…','Setting up your shop, owner account, cloud data, and web address. This can take a little while.'); try {if(lastSlug!==slug||!checkedAvailable){await checkSlug();if(lastSlug!==slug||!checkedAvailable)throw Error(availability.textContent||'This shop address is unavailable.');}const r=await fetch('/api/auth?mode=register',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({business:f.business.value.trim(),slug,name:f.name.value.trim(),email,password:f.password.value})}); const d=await readApiResponse(r,'Shop creation failed'); if(!d.tenantUrl||!d.handoffToken)throw Error('Shop created, but secure sign-in could not be prepared. Contact support.'); showProcessing('Your shop is coming online','We’re waiting for your secure POS address to activate. This page will continue automatically.'); await openNewTenant(d.tenantUrl,d.handoffToken); } catch(err) { hideProcessing(); toast(err.message||'Shop creation failed','err'); btn.disabled=false; } };
+    $('#liveRegister').onsubmit = async e => { e.preventDefault(); const btn=e.target.querySelector('button[type=submit]'); if(!e.target.reportValidity())return; if(f.password.value!==f.password2.value)return toast('Passwords do not match','err'); const email=f.email.value.trim().toLowerCase(),slug=slugInput.value.trim().toLowerCase(); if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return toast('Enter a valid POS address with at least 2 letters, numbers, or dashes','err');btn.disabled=true; showProcessing('Creating your POS…','Setting up your shop, owner account, cloud data, and web address. This can take a little while.'); try {if(lastSlug!==slug||!checkedAvailable){await checkSlug();if(lastSlug!==slug||!checkedAvailable)throw Error(availability.textContent||'This shop address is unavailable.');}const r=await fetch('/api/auth?mode=register',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({business:f.business.value.trim(),slug,name:f.name.value.trim(),email,password:f.password.value})}); const d=await readApiResponse(r,'Shop creation failed'); if(!d.tenantUrl||!d.handoffToken)throw Error('Shop created, but secure sign-in could not be prepared. Contact support.'); showProcessing('Your shop is coming online','We’re waiting for your secure POS address to activate. This page will continue automatically.'); await openNewTenant(d.tenantUrl,d.handoffToken); } catch(err) { hideProcessing(); toast(err.message||'Shop creation failed','err'); btn.disabled=false; } };
   } else if ($('#liveSetup')) {
     $('#liveSetup').elements.business.focus();
     $('#liveSetup').onsubmit = async e => { e.preventDefault(); const f = e.target.elements, btn = e.target.querySelector('button[type=submit]');

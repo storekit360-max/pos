@@ -75,9 +75,11 @@ module.exports = async (req,res) => {
       if (hostSlug(req)) return json(res,400,{error:'Create a shop from the main domain, not a shop subdomain'});
       const configuredRoot=rootDomain(req);
       if (!configuredRoot || configuredRoot.endsWith('.vercel.app')) return json(res,503,{error:'Shop subdomains need a custom domain with wildcard DNS and TLS configured in Vercel. A *.vercel.app address cannot be used.'});
-      if (shopName.length<2 || shopName.length>120 || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || !String(name || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || String(password || '').length < 10) return json(res,400,{error:'Enter a business name, available POS address, owner name, valid email address, and password of at least 10 characters'});
+      const ownerName=String(name||'').trim();
+      if (shopName.length<2 || shopName.length>120 || !/^[\p{L}\p{N}][\p{L}\p{N} .,'&()_-]*$/u.test(shopName) || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug) || ownerName.length<2 || ownerName.length>80 || !/^[\p{L}][\p{L} .'-]*$/u.test(ownerName) || email.length>254 || !/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email) || String(password || '').length < 10 || String(password).length > 200) return json(res,400,{error:'Enter a valid business name, POS address, owner name, email address, and password of 10–200 characters'});
       if (await database.collection('tenants').findOne({slug})) return json(res,409,{error:`${slug}.${configuredRoot} is already taken`});
-      const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:String(name).trim(),username:email,email,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
+      if (await users.findOne({email})) return json(res,409,{error:'This email already has a POS account. Sign in with your email to open your existing shop.' ,code:'EMAIL_IN_USE'});
+      const id=crypto.randomUUID(),now=new Date(), owner={id:crypto.randomUUID(),tenantId:id,name:ownerName,username:email,email,role:'owner',active:true,hash:await hash(String(password)),createdAt:now};
       const tenant={_id:id,name:shopName,slug,status:'trial',planSnapshot:{name:'Trial',userLimit:5,features:[]},trialEndsAt:new Date(Date.now()+14*86400000),graceDays:7,staffCount:1,contact:{},flags:{},createdAt:now,updatedAt:now};
       try {
         await database.collection('tenants').insertOne(tenant);
