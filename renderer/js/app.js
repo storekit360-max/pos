@@ -153,6 +153,22 @@ async function liveSignIn(username, password) {
   me = result.user; licenseInfo=result.license||null; log('login', me.username); shell();
 }
 
+async function completeLoginHandoff() {
+  const params=new URLSearchParams(location.search), token=params.get('handoff');
+  if(!token)return false;
+  params.delete('handoff');
+  history.replaceState(null,'',location.pathname+(params.size?`?${params}`:'')+location.hash);
+  showProcessing('Signing you in…','Opening your shop securely.');
+  const r=await fetchWithTimeout('/api/auth?mode=handoff',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({token})});
+  await readApiResponse(r,'Sign-in could not be completed');
+  const signed=await fetchWithTimeout('/api/auth?mode=status',{credentials:'same-origin'}), status=await readApiResponse(signed,'Could not load your shop');
+  if(!status.authenticated)throw new Error('Sign-in could not be completed. Please try again.');
+  const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud,'Could not load cloud data');
+  cloudRevision=response.revision;cloudBaseData=JSON.parse(JSON.stringify(response.data));cloudMutationId='';db=normalizeData(response.data);
+  me=status.user;licenseInfo=status.license||null;applyTenantBranding();localStorage.setItem(LS_KEY,JSON.stringify(db));hideProcessing();shell();startCloudPolling();
+  return true;
+}
+
 function startupScreen() {
   $('#app').innerHTML = `<div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS</span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">THE SMART POS</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p><span class="startup-note">Usually under a few seconds. You can safely retry if it takes longer.</span></div></div>`;
 }
@@ -171,12 +187,12 @@ function liveStartupError(message) {
 }
 
 function liveAuthScreen(view, opts = {}) {
-  const s = S(), isSetup = view === 'setup', isRegister = view === 'register';
+  const s = S(), isSetup = view === 'setup', isRegister = view === 'register', mainDomainLogin=!!window.tenantCreationOnly;
   const tab = (id, label) => `<button type="button" role="tab" aria-selected="${view === id}" data-view="${id}" class="btn ${view === id ? 'btn-p' : ''}" style="flex:1">${label}</button>`;
   const alertBox = cloudLastError ? `<p class="mut" role="alert" style="font-size:13px">${esc(cloudLastError)} <a href="#" id="liveRetry">Retry</a></p>` : (licenseInfo?.state === 'suspended' || licenseInfo?.state === 'cancelled' || licenseInfo?.state === 'deleted') ? `<p class="mut" role="alert" style="font-size:13px">${esc(licenseInfo.message || 'This shop account is suspended. Contact support.')}</p>` : '';
   let panel;
   if (!isSetup && !isRegister) {
-    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in</button></form>${liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : liveRegistrationOpen && !isTenantHost() ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">New to this shop? <a href="#" data-view="register">Create an account</a></p>' : ''}`;
+    panel = `<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">${mainDomainLogin?'Sign in to your POS':'Sign in'}</button></form>${mainDomainLogin ? '<p class="mut" style="margin-top:12px;font-size:13px;text-align:center">Enter your shop username and password. We’ll find your POS and open it for you.</p>' : liveSetupRequired ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">No account exists yet. <a href="#" data-view="setup">Create the owner account</a></p>' : liveRegistrationOpen && !isTenantHost() ? '<p class="mut" style="margin-top:14px;font-size:13px;text-align:center">New to this shop? <a href="#" data-view="register">Create an account</a></p>' : ''}`;
   } else if (isRegister) {
     panel = `<form id="liveRegister" class="fg"><p class="mut full" style="margin:0;font-size:13px;text-align:center">Create a separate POS shop. Your data and users will be isolated from every other shop.</p><label class="f full"><span>Business name *</span><input name="business" autocomplete="organization" required></label><div class="f full"><span>Your POS address</span><div style="display:flex;align-items:center;gap:0;border:1px solid var(--line,#ddd);border-radius:8px;overflow:hidden"><input name="slug" aria-label="Your POS address" autocomplete="off" required minlength="2" maxlength="49" pattern="[a-z0-9][a-z0-9-]{1,48}" style="min-width:0;flex:1;border:0;border-radius:0"><span id="tenantDomain" style="padding:10px 12px;background:var(--bg2,#f4f4f4);white-space:nowrap">Loading domain…</span></div><small id="slugAvailability" class="mut">Your POS address will be based on your business name.</small></div><label class="f full"><span>Owner name *</span><input name="name" autocomplete="name" required></label><label class="f full"><span>Owner username *</span><input name="username" autocomplete="username" required minlength="3"></label><label class="f"><span>Password * <small>(at least 10 characters)</small></span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label><label class="f"><span>Repeat password *</span><input name="password2" type="password" autocomplete="new-password" required minlength="10"></label><button class="btn btn-p btn-lg full" type="submit">Create shop</button></form>`;
   } else if (liveSetupRequired === false) {
@@ -194,7 +210,7 @@ function liveAuthScreen(view, opts = {}) {
 <button class="btn btn-p btn-lg full" type="submit">Create & start</button></form>`;
   }
   const tenantHost = isTenantHost(), showAuthTabs = liveRegistrationOpen && !tenantHost && !isSetup;
-  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(s.business || liveTenant?.branding?.business || 'POS')}</h2><p class="mut">${esc(s.tagline || liveTenant?.branding?.tagline || '')}</p></div>${alertBox}${showAuthTabs ? `<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('register', 'Create POS')}</div>` : ''}<div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
+  $('#app').innerHTML = `<div class="login"><div class="card" style="width:min(480px,100%)"><div style="text-align:center"><img ${s.logoData ? `src="${esc(s.logoData)}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(mainDomainLogin?'Welcome back':s.business || liveTenant?.branding?.business || 'POS')}</h2><p class="mut">${esc(mainDomainLogin?'Sign in to your shop POS':s.tagline || liveTenant?.branding?.tagline || '')}</p></div>${alertBox}${showAuthTabs ? `<div role="tablist" style="display:flex;gap:6px;margin:12px 0">${tab('login', 'Sign in')}${tab('register', 'Create POS')}</div>` : ''}<div id="liveAuthPanel" style="text-align:left">${panel}</div></div></div>`;
 
   document.querySelectorAll('#app [data-view]').forEach(el => { el.onclick = ev => { ev.preventDefault(); if (el.dataset.view !== view || el.tagName === 'A') liveAuthScreen(el.dataset.view, { animate: true }); }; });
   const retry = $('#liveRetry'); if (retry) retry.onclick = ev => { ev.preventDefault(); location.reload(); };
@@ -204,7 +220,11 @@ function liveAuthScreen(view, opts = {}) {
     if (opts.username) { $('#lu').value = opts.username; $('#lp').focus(); } else $('#lu').focus();
     $('#lf').onsubmit = async e => { e.preventDefault();
       const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; showProcessing('Signing you in…','Connecting to your shop and loading its latest data.');
-      try { await liveSignIn($('#lu').value.trim().toLowerCase(), $('#lp').value); }
+      try {
+        const username=$('#lu').value.trim().toLowerCase(),password=$('#lp').value;
+        if(mainDomainLogin){const r=await fetchWithTimeout('/api/auth?mode=login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username,password})}),d=await readApiResponse(r,'Sign-in failed');if(!d.tenantUrl)throw new Error('We couldn’t open your shop. Please try again.');showProcessing('Your POS is ready','Opening your shop securely…');location.assign(d.tenantUrl);return;}
+        await liveSignIn(username,password);
+      }
       catch (err) { hideProcessing(); toast(err.message || 'Live sign-in failed', 'err'); btn.disabled = false; }
     };
   } else if (isRegister && $('#liveRegister')) {
@@ -290,12 +310,16 @@ document.addEventListener('keydown', e => {
       cloudLastError = 'This shop address is not configured. Check the subdomain and try again.';
       db = defaults(); loginScreen(); window.updateUi?.start(); return;
     }
-    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null;
+    liveSetupRequired = !!setup.setupRequired; liveRegistrationOpen=!!setup.registrationOpen; liveTenant=setup.tenant||null; window.tenantCreationOnly=!!setup.tenantCreationOnly;
     if (setup.tenantCreationOnly) {
-      db = normalizeData(defaults()); liveAuthScreen('register'); startupReady = true; window.updateUi?.start(); return;
+      db = normalizeData(defaults()); liveAuthScreen('login'); startupReady = true; window.updateUi?.start(); return;
     }
     applyTenantBranding();
     licenseInfo=signed.license||setup.license||null;
+    if (location.search.includes('handoff=')) {
+      try { if(await completeLoginHandoff()){startupReady=true;window.updateUi?.start();return;} }
+      catch(err){hideProcessing();cloudLastError=err.message||'Sign-in could not be completed. Please try again.';}
+    }
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
       const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');

@@ -14,9 +14,9 @@ module.exports = async (req,res) => {
     const hostTenant = await tenantForRequest(database, req);
     const requestHost=String(req.headers.host||'').trim().toLowerCase().replace(/:\d+$/,'');
     const rootHost=!!rootDomain(req)&&requestHost===rootDomain(req);
-    if (req.method === 'POST' && !['setup','register','login'].includes(requestedMode) && !authorized(req,res)) return;
+    if (req.method === 'POST' && !['setup','register','login','handoff'].includes(requestedMode) && !authorized(req,res)) return;
     if (req.method === 'GET' && req.url.split('?')[0] === '/api/auth') {
-      if (requestedMode === 'status' && rootHost) return json(res,200,{setupRequired:false,registrationOpen:true,tenantCreationOnly:true});
+      if (requestedMode === 'status' && rootHost) return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenantCreationOnly:true});
       if (requestedMode === 'slug') {
         const slug=String(new URL(req.url,'https://pos.invalid').searchParams.get('value')||'').trim().toLowerCase();
         if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
@@ -95,7 +95,22 @@ module.exports = async (req,res) => {
     }
     if (mode === 'login') {
       const { username, password } = req.body || {}, un = String(username || '').trim().toLowerCase();
-      if (rootHost) return json(res,403,{error:'This is the main domain. Create a shop here, then sign in at its shop subdomain.',code:'TENANT_DOMAIN_REQUIRED'});
+      if (rootHost) {
+        if (!un || !password) return json(res,400,{error:'Enter your username and password.'});
+        const matches=await users.find({username:un,active:true}).limit(20).toArray();
+        const verified=[];
+        for (const candidate of matches) if (candidate.hash && await verify(String(password),candidate.hash)) verified.push(candidate);
+        if (!verified.length) return json(res,401,{error:'We couldn’t find a shop account with those details. Check your username and password, or open your shop address.'});
+        if (verified.length>1) return json(res,409,{error:'This username is used by more than one shop. Sign in with your shop address to continue.',code:'MULTIPLE_SHOPS'});
+        const user=verified[0], tenant=await database.collection('tenants').findOne({_id:user.tenantId});
+        if (!tenant || tenant.status==='deleted' || tenant.slug==='main') return json(res,403,{error:'This account uses the main POS address. Please contact support to confirm your sign-in address.'});
+        const entitlement=await license(database,user.tenantId);
+        if (['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
+        const token=crypto.randomBytes(32).toString('base64url'),tokenHash=crypto.createHash('sha256').update(token).digest('hex'),expiresAt=new Date(Date.now()+2*60*1000);
+        await database.collection('login_handoffs').insertOne({_id:tokenHash,userId:user.id,tenantId:user.tenantId,sessionVersion:user.sessionVersion||0,expiresAt,createdAt:new Date()});
+        const root=rootDomain(req);
+        return json(res,200,{ok:true,tenantUrl:`https://${tenant.slug}.${root}/?handoff=${encodeURIComponent(token)}`});
+      }
       await ensureMain(database);
       if (!hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
       const user = await users.findOne({username:un,tenantId:hostTenant._id,active:true});
@@ -105,6 +120,18 @@ module.exports = async (req,res) => {
       await database.collection('tenants').updateOne({_id:user.tenantId||'main'},{$set:{lastActiveAt:new Date()}});
       const settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.';
       setSession(res,user.id,user.tenantId || 'main',user.sessionVersion||0); return json(res,200,{ok:true,user:{id:user.id,name:user.name,username:user.username,role:user.role,active:true},license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'' ,announcements:await announcements(database,user.tenantId||'main')}});
+    }
+    if (mode === 'handoff') {
+      if (rootHost || !hostTenant) return json(res,400,{error:'Open your shop address to finish signing in.'});
+      const token=String(req.body?.token||'');
+      if(!/^[A-Za-z0-9_-]{40,60}$/.test(token))return json(res,400,{error:'Sign-in link is invalid or expired. Please try again.'});
+      const tokenHash=crypto.createHash('sha256').update(token).digest('hex'),handoffs=database.collection('login_handoffs');
+      const handoff=await handoffs.findOneAndDelete({_id:tokenHash,tenantId:hostTenant._id,expiresAt:{$gt:new Date()}});
+      if(!handoff)return json(res,401,{error:'Sign-in link has expired. Please enter your details again.'});
+      const user=await users.findOne({id:handoff.userId,tenantId:hostTenant._id,active:true,sessionVersion:handoff.sessionVersion});
+      if(!user)return json(res,401,{error:'Your account changed. Please enter your details again.'});
+      setSession(res,user.id,user.tenantId,user.sessionVersion||0);
+      return json(res,200,{ok:true});
     }
     if (mode === 'staff') {
       const s = session(req);

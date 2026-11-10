@@ -115,10 +115,6 @@ A.newExp = () => {
     row.querySelector('button').addEventListener('click', () => row.remove());
     ov.querySelector('[data-exp-items]').append(row); row.querySelector('[data-item-name]').focus();
   });
-  const catField = form.elements.cat.closest('label');
-  const manage = document.createElement('button'); manage.type = 'button'; manage.className = 'btn btn-s'; manage.textContent = 'Manage categories';
-  manage.addEventListener('click', () => { ov.remove(); A.manageLists(); });
-  catField.after(manage);
 };
 A.voidExp = async id => { if (!(await confirmDlg('Void this expense?'))) return; const e = db.expenses.find(x => x.id === id); e.void = true; log('expense void', e.desc + ' ' + e.amount); save(); drawExp(); };
 A.expCSV = () => download('expenses.csv', toCSV([['Date', 'Category', 'Description', 'Paid to', 'Method', 'Amount', 'Void'], ...expList().map(e => [e.date, e.cat, e.desc, e.to, e.method, e.amount, e.void ? 'yes' : ''])]));
