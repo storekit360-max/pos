@@ -114,7 +114,7 @@ async function syncCloud() {
     if (!cloudMutationId || !local) return;
     const r = await fetch('/api/data', {method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({data:local,baseRevision:cloudRevision,clientMutationId:cloudMutationId})});
     const result = await r.json();
-    if (!r.ok) { if (r.status === 409) { const latest = await fetch('/api/data',{credentials:'same-origin'}); const remote = await latest.json(); if (latest.ok) preserveCloudConflict(local, remote.data, remote.revision); else { cloudLastError='Cloud data changed, and the latest copy could not be loaded. Your local copy remains saved.'; showCloudSyncStatus(); } } else if (r.status === 402 && result.code === 'LICENSE_EXPIRED') { if(typeof licenseInfo!=='undefined')licenseInfo={...(licenseInfo||{}),state:'expired',message:result.error}; cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; nav(current); showCloudSyncStatus(); } else if (r.status === 403 && result.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me = null; loginScreen(); showCloudSyncStatus(); } else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; return; }
+    if (!r.ok) { if (r.status === 409) { const latest = await fetch('/api/data',{credentials:'same-origin'}); const remote = await latest.json(); if (latest.ok) preserveCloudConflict(local, remote.data, remote.revision); else { cloudLastError='Cloud data changed, and the latest copy could not be loaded. Your local copy remains saved.'; showCloudSyncStatus(); } } else if (r.status === 402 && result.code === 'PAYMENT_REQUIRED') { cloudLastError='Subscription payment is due. Unsynced local edits remain on this device.'; if (typeof enterBillingLock === 'function') enterBillingLock(); } else if (r.status === 402 && result.code === 'LICENSE_EXPIRED') { if(typeof licenseInfo!=='undefined')licenseInfo={...(licenseInfo||{}),state:'expired',message:result.error}; cloudLastError='Your subscription expired. Local edits remain on this device and are not being sent. Export your data and contact support to renew.'; nav(current); showCloudSyncStatus(); } else if (r.status === 403 && result.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me = null; loginScreen(); showCloudSyncStatus(); } else if (r.status === 401) { me = null; loginScreen(); } else cloudLastError = result.error || 'Cloud sync failed'; return; }
     cloudRevision = result.revision; cloudBaseData = JSON.parse(JSON.stringify(local)); cloudMutationId = ''; localStorage.removeItem(LS_KEY + ':pending'); cloudLastError = '';
   } catch (_) { cloudLastError = 'Offline changes are saved on this device and will sync when reconnected.'; }
   finally { cloudSyncBusy = false; if (cloudLastError && me && navigator.onLine && !cloudLastError.startsWith('Cloud data changed') && !cloudLastError.startsWith('Your subscription expired')) { clearTimeout(cloudSyncTimer); cloudSyncTimer=setTimeout(syncCloud,5000); } }
@@ -122,30 +122,19 @@ async function syncCloud() {
 window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); });
 // Tenant POS instances use separate browser storage, so changes from another
 // signed-in session must be fetched from the tenant's cloud snapshot.
-let cloudPollCount = 0;
 function startCloudPolling() {
   if (!LIVE_WEB || cloudPollTimer) return;
   cloudPollTimer = setInterval(() => {
-    // A hidden tab does not need live updates; it catches up as soon as it is shown again.
-    if (document.hidden || !me || !navigator.onLine || cloudMutationId) return;
-    // Cheap revision check on most ticks; a full refresh every 15th tick also
-    // picks up staff-account changes, which do not change the shop revision.
-    refreshCloudThenSync(++cloudPollCount % 15 !== 0);
+    if (me && navigator.onLine && !cloudMutationId) refreshCloudThenSync();
   }, 2000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && me && navigator.onLine && !cloudMutationId) refreshCloudThenSync(true); });
 }
-async function refreshCloudThenSync(quick = false) {
+async function refreshCloudThenSync() {
   if (!LIVE_WEB || !me || !navigator.onLine) return;
   if (cloudRefreshPromise) return cloudRefreshPromise;
   cloudRefreshPromise = (async () => { try {
-    // quick: ask only for the shop revision (a few bytes). If it matches what
-    // this device already has, nothing changed and the full download is skipped.
-    if (quick && cloudBaseData) {
-      const m = await fetch('/api/data?meta=1',{credentials:'same-origin'});
-      if (m.ok) { const meta = await m.json(); if (meta && meta.revision === cloudRevision) { if (!cloudLastError.startsWith('Cloud data changed')) cloudLastError = ''; return; } }
-    }
     const r = await fetch('/api/data',{credentials:'same-origin'}), response=await r.json();
     if (r.status === 401) { me=null; loginScreen(); return; }
+    if (r.status === 402 && response.code === 'PAYMENT_REQUIRED') { if (typeof enterBillingLock === 'function') enterBillingLock(); return; }
     if (r.status === 403 && response.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me=null; loginScreen(); showCloudSyncStatus(); return; }
     if (!r.ok) throw new Error(response.error || 'Could not refresh cloud data');
     if (JSON.stringify(response.data) !== JSON.stringify(cloudBaseData)) {

@@ -64,6 +64,7 @@
     nav.classList.remove('open');$('#menu').setAttribute('aria-expanded','false');
     $('#who').textContent=admin?`${admin.email} · ${admin.role}`:'';
     const staffLink=nav.querySelector('a[href="#/staff"]');if(staffLink)staffLink.hidden=!['root','support'].includes(admin?.role);
+    const billingLink=nav.querySelector('a[href="#/billing"]');if(billingLink)billingLink.hidden=!['root','billing','readonly'].includes(admin?.role);
     const licenseLink=nav.querySelector('a[href="#/licenses"]');if(licenseLink)licenseLink.hidden=!['root','billing','readonly'].includes(admin?.role);
   }
   function endSession(message,info=true){
@@ -488,6 +489,96 @@
     }));
   }
 
+  /* ================= Billing: monthly subscriptions, bank details, activation ================= */
+  const bState={page:1,limit:25,search:'',filter:''},hState={page:1,limit:10};
+  const money=(cur,n)=>`${cur||'LKR'} ${Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const dueText=t=>{if(t.exempt)return 'Exempt';const d=t.daysLeft;return d===null?'—':d<0?`${-d} d overdue`:d===0?'Due today':`${d} d left`;};
+  async function billingPage(){
+    heading('Billing',btn('Refresh',()=>billingPage()));
+    if(!['root','billing','readonly'].includes(admin?.role)){card().append(el('p','Your role cannot view billing.','muted'));return;}
+    const mine=++dashRun,editable=['root','billing'].includes(admin.role);
+    // ---- payment details shown to shops ----
+    const bank=card('Payment details shown to shops');
+    bank.append(el('p','Shops see the amount due and these bank details after they sign in once their subscription is unpaid, and during the last 7 days before the due date. Billing cycle: 30 days from the shop creation date.','muted'));
+    let settings;
+    try{settings=(await api('billing.settings.get')).settings;}catch(e){if(!e.handled)bank.append(el('p',e.message,'error-text'));return;}
+    if(mine!==dashRun)return;
+    const f={monthlyFee:field('Monthly fee (per 30 days)','number',settings.monthlyFee,'monthlyFee'),currency:field('Currency','text',settings.currency,'currency'),bankName:field('Bank name','text',settings.bankName,'bankName'),accountName:field('Account holder name','text',settings.accountName,'accountName'),accountNumber:field('Account number','text',settings.accountNumber,'accountNumber'),branch:field('Branch','text',settings.branch,'branch'),swift:field('SWIFT / BIC (optional)','text',settings.swift,'swift'),instructions:field('Payment instructions (optional)','textarea',settings.instructions,'instructions')};
+    f.monthlyFee.control.min='1';f.monthlyFee.control.step='any';
+    const r1=rowIn(bank),r2=rowIn(bank),r3=rowIn(bank);
+    r1.append(f.monthlyFee,f.currency);r2.append(f.bankName,f.accountName,f.accountNumber,f.branch,f.swift);r3.append(f.instructions);
+    if(!editable)for(const x of Object.values(f))x.control.disabled=true;
+    else{const save=btn('Save payment details',()=>busy(save,async()=>{const b={};for(const [k,v] of Object.entries(f))b[k]=v.control.value;b.monthlyFee=Number(b.monthlyFee);await api('billing.settings.save',b);toast('Payment details saved');await billingPage();}),'primary');bank.append(save);}
+
+    // ---- shop subscriptions ----
+    const subs=card('Shop subscriptions'),filters=rowIn(subs),q=field('Search','search',bState.search,'search'),st=field('Show','select');
+    q.control.placeholder='Shop name or slug';
+    options(st.control,[['','All shops'],['overdue','Overdue / locked'],['soon','Due in 7 days']],bState.filter);
+    const apply=()=>{bState.search=q.control.value.trim();bState.filter=st.control.value;bState.page=1;loadSubs();};
+    q.control.addEventListener('keydown',e=>{if(e.key==='Enter')apply();});st.control.addEventListener('change',apply);
+    filters.append(q,st,btn('Search',apply,'primary'));
+    const subsOut=el('div');subs.append(subsOut);
+    const hist=card('Payment history'),histOut=el('div');hist.append(histOut);
+
+    async function loadSubs(){
+      subsOut.replaceChildren(el('p','Loading…','muted'));
+      let d;try{d=await api(`billing.list&${qs({page:bState.page,limit:bState.limit,search:bState.search,filter:bState.filter})}`);}
+      catch(e){subsOut.replaceChildren();if(!e.handled)subsOut.append(el('p',e.message,'error-text'));return;}
+      if(mine!==dashRun)return;
+      subsOut.replaceChildren();
+      if(!d.items.length){subsOut.append(el('p','No shops match.','empty'));return;}
+      subsOut.append(table(['Shop','Status','Billing started','Due date','Time left','Amount due','Last payment',''],d.items,(tr,t)=>{
+        const sc=el('td');sc.append(pill(t.status));
+        const left=el('td',dueText(t));if(!t.exempt&&t.daysLeft!==null&&t.daysLeft<0)left.className='error-text';
+        tr.append(el('td',t.name),sc,el('td',fmtDay(t.billingStart)),el('td',t.exempt?'—':fmtDay(t.dueAt)),left,el('td',t.exempt?'—':money(t.currency,t.amountDue)),el('td',t.lastPaidAt?`${fmtDay(t.lastPaidAt)} · ${money(t.currency,t.lastPaymentAmount)}`:'—'));
+        const a=el('td',undefined,'actions');
+        if(editable){if(!t.exempt)a.append(btn('Activate 30 days',()=>activateDialog(t),'primary'));a.append(btn('Terms',()=>termsDialog(t)));}
+        a.append(btn('Open',()=>{location.hash=`#/tenants/${encodeURIComponent(t._id)}`;}));
+        tr.append(a);
+      }));
+      pager(subsOut,bState,d.total,loadSubs);
+    }
+    async function loadHist(){
+      histOut.replaceChildren(el('p','Loading…','muted'));
+      let d;try{d=await api(`billing.payments&${qs({page:hState.page,limit:hState.limit})}`);}
+      catch(e){histOut.replaceChildren();if(!e.handled)histOut.append(el('p',e.message,'error-text'));return;}
+      if(mine!==dashRun)return;
+      histOut.replaceChildren();
+      if(!d.items.length){histOut.append(el('p','No payments recorded yet.','empty'));return;}
+      histOut.append(table(['Received','Shop','Amount','Cycles','Method','Reference','Active until'],d.items,(tr,p)=>{
+        const amount=el('td',money(p.currency,p.amount));if(p.voidedAt){amount.textContent+=' (voided)';amount.className='muted';}
+        tr.append(el('td',fmt(p.createdAt)),el('td',p.tenantName),amount,el('td',p.cycles??'—'),el('td',p.method),el('td',p.reference||'—'),el('td',p.periodEnd?fmtDay(p.periodEnd):'—'));
+      }));
+      pager(histOut,hState,d.total,loadHist);
+    }
+    const refreshAll=()=>Promise.all([loadSubs(),loadHist()]);
+
+    function activateDialog(t){
+      const minCycles=Math.max(1,t.overdueCycles||0);
+      const cycles=field('Billing cycles paid (30 days each)','number',String(minCycles),'cycles'),amount=field(`Amount received (${t.currency})`,'number',String(t.monthlyFee*minCycles),'amount'),method=field('Payment method','select'),ref=field('Bank reference / slip number','text','','reference'),from=field('Count the 30 days from','select');
+      cycles.control.min=String(minCycles);cycles.control.max='24';amount.control.step='any';
+      options(method.control,[['bank transfer','Bank transfer'],['cash','Cash'],['card','Card'],['other','Other']],'bank transfer');
+      options(from.control,[['due','The due date (keeps the billing day)'],['today','Today (a full 30 days from now)']],'due');
+      let edited=false;amount.control.addEventListener('input',()=>{edited=true;});
+      cycles.control.addEventListener('input',()=>{if(!edited)amount.control.value=String(t.monthlyFee*(Number(cycles.control.value)||1));});
+      const intro=`${t.name}: ${t.overdueCycles>0?`${t.overdueCycles} cycle(s) overdue, total due ${money(t.currency,t.amountDue)}.`:`paid until ${fmtDay(t.dueAt)}. This extends the subscription.`} Confirm the money is in your bank account first. The POS unlocks immediately.`;
+      dialog('Confirm payment and activate',intro,[cycles,amount,method,ref,from],'Activate POS',async()=>{
+        const d=await api('billing.activate',{tenantId:t._id,cycles:Number(cycles.control.value),amount:Number(amount.control.value),method:method.control.value,reference:ref.control.value,from:from.control.value});
+        closeModal();toast(`${t.name} is active until ${fmtDay(d.expiresAt)}`);await refreshAll();
+      });
+    }
+    function termsDialog(t){
+      const fee=field(`Monthly fee for this shop (blank = default ${money(t.currency,settings.monthlyFee)})`,'number',t.monthlyFee===settings.monthlyFee?'':String(t.monthlyFee),'fee'),grace=field('Grace days after due date (0 = lock immediately)','number',String(t.graceDays??0),'grace'),exempt=field('Billing','select');
+      fee.control.step='any';grace.control.min='0';grace.control.max='90';
+      options(exempt.control,[['no','Billed every 30 days'],['yes','Exempt (never locked for payment)']],t.exempt?'yes':'no');
+      dialog(`Billing terms · ${t.name}`,'',[fee,grace,exempt],'Save terms',async()=>{
+        await api('billing.tenant',{tenantId:t._id,monthlyFee:fee.control.value.trim()===''?null:Number(fee.control.value),graceDays:Number(grace.control.value),exempt:exempt.control.value==='yes'});
+        closeModal();toast('Billing terms saved');await loadSubs();
+      });
+    }
+    await refreshAll();
+  }
+
   /* ================= Routing ================= */
   async function route(){
     if(!admin){if(authBox.hidden)showLogin();return;}
@@ -498,6 +589,7 @@
       switch(parts[0]){
         case 'tenants':parts[1]?await tenantDetail(decodeURIComponent(parts[1])):await tenants();break;
         case 'staff':await staffPage();break;
+        case 'billing':await billingPage();break;
         case 'licenses':await licensesPage();break;
         default:await dashboard();
       }

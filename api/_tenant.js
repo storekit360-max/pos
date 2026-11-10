@@ -1,5 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
+const Billing = require('./_billing');
 
 // The legacy-user/main-tenant repair below is idempotent, so it only needs to
 // run once per server instance (re-checked every 5 minutes), not on every request.
@@ -52,17 +53,21 @@ async function tenantForRequest(database, req) {
 
 async function license(database, id) {
   await ensureMain(database);
-  const tenant = await database.collection('tenants').findOne({ _id: id }, { projection: { name: 1, status: 1, expiresAt: 1, trialEndsAt: 1, graceDays: 1, planSnapshot: 1 } });
+  let tenant = await database.collection('tenants').findOne({ _id: id }, { projection: { name: 1, status: 1, expiresAt: 1, trialEndsAt: 1, graceDays: 1, planSnapshot: 1, billing: 1, createdAt: 1 } });
   if (!tenant) return { state: 'suspended', tenant: null, daysLeft: 0 };
-  const now = Date.now(), until = tenant.expiresAt || tenant.trialEndsAt;
+  tenant = await Billing.ensure(database, tenant);
+  const now = Date.now(), due = Billing.dueAt(tenant), until = due ? due.getTime() : null;
   let state = tenant.status || 'active', daysLeft = null;
   if (['cancelled', 'deleted', 'suspended'].includes(state)) return { state, tenant, daysLeft: 0 };
-  if (until && new Date(until).getTime() <= now) {
-    const graceEnd = new Date(until).getTime() + Number(tenant.graceDays || 0) * 86400000;
+  if (until && until <= now) {
+    const graceEnd = until + Number(tenant.graceDays || 0) * 86400000;
     state = graceEnd > now ? 'grace' : 'expired';
     daysLeft = state === 'grace' ? Math.max(0, Math.ceil((graceEnd - now) / 86400000)) : 0;
-  } else if (state === 'trial' && tenant.trialEndsAt) daysLeft = Math.max(0, Math.ceil((new Date(tenant.trialEndsAt).getTime() - now) / 86400000));
-  else if (until) daysLeft = Math.max(0, Math.ceil((new Date(until).getTime() - now) / 86400000));
+  } else if (until) {
+    // Paid up again (for example the super admin extended the date): leave grace/expired automatically.
+    if (state === 'grace' || state === 'expired') state = 'active';
+    daysLeft = Math.max(0, Math.ceil((until - now) / 86400000));
+  }
   if (state !== tenant.status) await database.collection('tenants').updateOne({ _id: id }, { $set: { status: state, updatedAt: new Date() } });
   return { state, tenant, daysLeft };
 }

@@ -20,6 +20,8 @@ module.exports = async (req,res) => {
     if (!hostTenant || hostTenant._id !== tid) return json(res,403,{error:'Session does not belong to this shop',code:'TENANT_HOST_MISMATCH'});
     if (['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
     if (!user || (s.sessionVersion||0)!==(user.sessionVersion||0)) return json(res,401,{error:'Please sign in again'});
+    // Unpaid subscription: the POS is disabled for reads and writes until the super admin activates the next cycle.
+    if (entitlement.state === 'expired') return json(res,402,{error:'Subscription payment is due. Pay the outstanding amount to unlock this POS.',code:'PAYMENT_REQUIRED'});
     // lastActiveAt is informational; writing it on every poll was a database write every 2 seconds.
     const lastActive = hostTenant.lastActiveAt ? new Date(hostTenant.lastActiveAt).getTime() : 0;
     if (Date.now() - lastActive > 300000) await database.collection('tenants').updateOne({_id:tid},{$set:{lastActiveAt:new Date()}});
@@ -30,7 +32,6 @@ module.exports = async (req,res) => {
       return json(res,200,{data,revision:doc.revision || 0});
     }
     if (req.method === 'PUT') {
-      if (entitlement.state === 'expired') return json(res,402,{error:'Subscription expired. Data is available read-only until renewed.',code:'LICENSE_EXPIRED'});
       const {data,baseRevision,clientMutationId} = req.body || {};
       if (!data || typeof data !== 'object' || Buffer.byteLength(JSON.stringify(data)) > 4_000_000 || !Number.isInteger(baseRevision) || typeof clientMutationId !== 'string' || clientMutationId.length > 100) return json(res,400,{error:'Invalid or oversized POS data'});
       const clean = JSON.parse(JSON.stringify(data)); delete clean.users;

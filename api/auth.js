@@ -5,13 +5,18 @@ const { json, session, setSession, clearSession, authorized } = require('./_http
 const { hash, verify } = require('./_password');
 const { ensureMain, tenantId, license, announcements, rootDomain, tenantForRequest, hostSlug } = require('./_tenant');
 const { registerTenantDomain } = require('./_vercel-domain');
+const Billing = require('./_billing');
 // Never send credentials or internal fields to the browser.
 const publicUser = (u) => { const out = { ...u }; delete out._id; delete out.hash; delete out.tenantId; delete out.sessionVersion; return out; };
 // Licence summary shown in the UI. The two lookups are independent, so run them together.
-async function licenseView(database, tid, entitlement) {
-  const [settings, notices] = await Promise.all([database.collection('superadmin_settings').findOne({_id:'global'}), announcements(database,tid)]);
+async function licenseView(database, tid, entitlement, opts = {}) {
+  const [rows, notices] = await Promise.all([database.collection('superadmin_settings').find({_id:{$in:['global',Billing.SETTINGS_ID]}}).toArray(), announcements(database,tid)]);
+  const settings = rows.find(x=>x._id==='global'), { _id: _skip, ...billingSettings } = rows.find(x=>x._id===Billing.SETTINGS_ID) || {};
   const support = settings?.supportContact || 'Contact support to renew.';
-  return {state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'',announcements:notices};
+  const view = {state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'',announcements:notices};
+  // The public pre-login status call never carries amounts or bank details.
+  if (!opts.publicView && entitlement.tenant) view.billing = Billing.view(entitlement.tenant, { monthlyFee: Billing.DEFAULT_FEE, currency: 'LKR', ...billingSettings }, entitlement.state);
+  return view;
 }
 module.exports = async (req,res) => {
   res.setHeader('Cache-Control','no-store');
@@ -47,7 +52,7 @@ module.exports = async (req,res) => {
         const initialized = !!state;
         if (!anyTenant && !initialized && (await users.countDocuments())===0) return json(res,200,{setupRequired:true});
         if (existing || initialized || (scope==='main' && anyTenant)) {
-          const entitlement = await license(database,scope), view = await licenseView(database,scope,entitlement), publicSettings = state?.data?.settings||{};
+          const entitlement = await license(database,scope), view = await licenseView(database,scope,entitlement,{publicView:true}), publicSettings = state?.data?.settings||{};
           return json(res,200,{setupRequired:false,registrationOpen,tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316'}},license:view});
         }
         return json(res,200,{setupRequired:false,registrationOpen});
@@ -145,8 +150,7 @@ module.exports = async (req,res) => {
       const entitlement = await license(database, user.tenantId || 'main');
       if (['suspended','cancelled','deleted'].includes(entitlement.state)) return json(res,403,{error:'This shop account is suspended. Contact support.',code:'TENANT_SUSPENDED'});
       await database.collection('tenants').updateOne({_id:user.tenantId||'main'},{$set:{lastActiveAt:new Date()}});
-      const settings=await database.collection('superadmin_settings').findOne({_id:'global'}),support=settings?.supportContact||'Contact support to renew.';
-      setSession(res,user.id,user.tenantId || 'main',user.sessionVersion||0); return json(res,200,{ok:true,user:{id:user.id,name:user.name,username:user.username,role:user.role,active:true},license:{state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?`Your subscription has expired. ${support}`:entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'' ,announcements:await announcements(database,user.tenantId||'main')}});
+      setSession(res,user.id,user.tenantId || 'main',user.sessionVersion||0); return json(res,200,{ok:true,user:{id:user.id,name:user.name,username:user.username,role:user.role,active:true},license:await licenseView(database,user.tenantId||'main',entitlement)});
     }
     if (mode === 'handoff') {
       if (rootHost || !hostTenant) return json(res,400,{error:'Open your shop address to finish signing in.'});
