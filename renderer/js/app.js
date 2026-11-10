@@ -313,8 +313,8 @@ function liveSetupScreen() { liveAuthScreen('setup'); }
 
 /* ---- global events ---- */
 document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && A[el.dataset.act]) { e.preventDefault(); try { A[el.dataset.act](el.dataset.id, el, e); } catch (err) { console.error(err); toast('Error: ' + err.message, 'err'); } } });
-document.addEventListener('input', e => { const el = e.target.closest('[data-in]'); if (el && I[el.dataset.in]) { try { I[el.dataset.in](el.type === 'checkbox' ? el.checked : el.value, el); } catch (err) { console.error(err); } } });
-document.addEventListener('change', e => { if (e.target.id === 'bkfreq') { const day = $('#bkdaywrap'); if (day) day.style.display = e.target.value === 'weekly' ? '' : 'none'; } });
+document.addEventListener('input', e => { const el = e.target.closest('[data-in]'); if (el && el.dataset.commit !== 'change' && I[el.dataset.in]) { try { I[el.dataset.in](el.type === 'checkbox' ? el.checked : el.value, el); } catch (err) { console.error(err); } } });
+document.addEventListener('change', e => { const el = e.target.closest('[data-in][data-commit="change"]'); if (el && I[el.dataset.in]) { try { I[el.dataset.in](el.type === 'checkbox' ? el.checked : el.value, el); } catch (err) { console.error(err); } } if (e.target.id === 'bkfreq') { const day = $('#bkdaywrap'); if (day) day.style.display = e.target.value === 'weekly' ? '' : 'none'; } });
 document.addEventListener('keydown', e => {
   if (e.target.id === 'scan' && e.key === 'Enter') { e.preventDefault(); scanned(e.target.value); e.target.value = ''; return; }
   if (!me) return;

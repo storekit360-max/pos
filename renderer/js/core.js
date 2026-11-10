@@ -50,12 +50,13 @@ function defaults() {
       accent: '#f97316', dark: false, labelW: 50, labelH: 30, labelCols: 3, labelName: true, labelSku: true, labelPrice: true, labelBiz: true,
       labelPageW: 210, labelPageH: 297, labelMarginTop: 3, labelMarginRight: 3, labelMarginBottom: 3, labelMarginLeft: 3, labelGapX: 1, labelGapY: 1, labelPadding: 1, labelAutoAlign: true, labelOffsetX: 0, labelOffsetY: 0,
       backupDir: '', backupTime: '02:00', backupFrequency: 'daily', backupWeekday: 1, backupKeep: 30, backupOn: true, payMethods: 'Cash,Card,Bank Transfer,QR / Digital', updateManifestUrl: 'https://pos360live.vercel.app/updates/latest.json', attendanceStart: '09:00', docSub: '', docFootTag: '', docSignName: '', docLogo: '', docBulb: '', docSign: ''
+      , payrollCurrency: '', payrollWeekendMultiplier: 1.5, payrollHolidayMultiplier: 2, payrollOtMultiplier: 1.5, payrollEpfEmployeePct: 8, payrollEpfEmployerPct: 12, payrollEtfEmployerPct: 3, payrollApitPct: 0
     },
     categories: ['Smartphones', 'Feature Phones', 'Tablets', 'Chargers', 'Charging Cables', 'Power Banks', 'Earphones', 'Headphones', 'Bluetooth Speakers', 'Phone Cases', 'Screen Protectors', 'Memory Cards', 'USB Drives', 'Smartwatches', 'Phone Parts', 'Repair Accessories', 'Other Accessories'],
     brands: ['Apple', 'Samsung', 'Xiaomi', 'Huawei', 'Oppo', 'Vivo', 'Realme', 'Anker', 'JBL', 'Generic'],
     expCats: ['Rent', 'Electricity', 'Internet', 'Salaries', 'Transport', 'Repairs', 'Packaging', 'Bank Charges', 'Marketing', 'Miscellaneous'],
     products: [], suppliers: [], customers: [], sales: [], returns: [], purchases: [], expenses: [], payments: [],
-    moves: [], held: [], shifts: [], attendance: [], payroll: [], audit: [], users: [], quotations: [], quotationTemplates: [],
+    moves: [], held: [], shifts: [], attendance: [], payroll: [], payrollPayments: [], payrollAdvances: [], payrollLeave: [], payrollProfiles: [], salaryStructures: [], payrollComponents: [], overtimeRecords: [], leaveRecords: [], employeeLoans: [], payrollAdjustments: [], payrollAudit: [], audit: [], users: [], quotations: [], quotationTemplates: [],
     counters: { sale: 0, pur: 0, ret: 0, bar: 0, sku: 0, quote: 0 }
   };
 }
