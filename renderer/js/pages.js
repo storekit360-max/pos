@@ -161,7 +161,7 @@ A.pickDev = id => { const [pid, did] = id.split('|'), p = prod(pid); pushLine(p,
 A.addProd = id => { addToCart(prod(id)); $('#scan')?.focus(); };
 A.qtyP = n => { const i = cart[+n], p = prod(i.pid), orig = ps.adjustmentId ? db.sales.find(s=>s.id===ps.adjustmentId)?.items.find(x=>x.pid===i.pid&&!x.dev)?.qty||0 : 0; if (i.qty + 1 > p.stock + orig) return toast('Not enough stock', 'err'); i.qty++; drawCart(); };
 A.qtyM = n => { const i = cart[+n], original = ps.adjustmentId ? db.sales.find(s=>s.id===ps.adjustmentId)?.items.find(x=>x.pid===i.pid&&!x.dev) : null; if (i.qty > 1) i.qty--; else if(original) i.qty=0; else cart.splice(+n, 1); drawCart(); };
-A.rmLine = n => { const i=cart[+n], original=ps.adjustmentId?db.sales.find(s=>s.id===ps.adjustmentId)?.items.some(x=>x.pid===i.pid&&x.dev===i.dev):false; if(original){if(i.dev)return toast('Serialized devices cannot be removed through this adjustment');i.qty=0;}else cart.splice(+n, 1); drawCart(); };
+A.rmLine = n => { const i=cart[+n], original=ps.adjustmentId?db.sales.find(s=>s.id===ps.adjustmentId)?.items.some(x=>x.pid===i.pid&&x.dev===i.dev):false; if(original)i.qty=0; else cart.splice(+n, 1); drawCart(); };
 A.clearCart = async () => { if (cart.length && !(await confirmDlg('Clear the current bill?'))) return; cart = []; ps.a1 = ps.a2 = ''; ps.dVal = 0; P.pos(); };
 A.holdSale = () => { if (!cart.length) return; db.held.push({ id: uid(), at: nowISO(), cart, cust: ps.cust }); cart = []; save(); toast('Bill held'); P.pos(); };
 A.resumeSale = () => {
@@ -250,9 +250,16 @@ A.completeSaleAdjustment = id => {
   const t=posTotals(), oldDue=r2(Math.max(0,num(s.total)-num(s.paid))), newDue=r2(Math.max(0,t.total-num(s.paid))), dueDelta=r2(newDue-oldDue), customer=cust(s.customerId);
   if(dueDelta>0.005&&customer?.limit&&num(customer.balance)+dueDelta>customer.limit)return toast('Customer credit limit exceeded','err');
   const stockDeltas={}; for(const pid of new Set([...Object.keys(oldCounts),...Object.keys(newCounts)]))stockDeltas[pid]=(oldCounts[pid]||0)-(newCounts[pid]||0);
+  const revisedDevices=new Set(revised.filter(i=>i.dev).map(i=>i.dev));
+  const removedDevices=original.filter(i=>i.dev&&!revisedDevices.has(i.dev));
+  for(const i of revised.filter(i=>i.dev)){
+    if(!original.some(old=>old.dev===i.dev))return toast(`Device ${i.imei||i.dev} was not on the original invoice`,'err');
+  }
+  for(const i of removedDevices){const p=prod(i.pid),d=p?.devs.find(x=>x.id===i.dev);if(!d||d.status!=='sold'||d.saleId!==s.id)return toast(`Device ${i.imei||i.dev} is no longer assigned to this invoice`,'err');}
   s.items=revised.map(i=>({pid:i.pid,name:i.name,qty:i.qty,price:i.price,disc:i.disc,cost:i.cost,dev:i.dev,imei:i.imei,warrantyM:i.warrantyM,returned:i.returned||0}));
   s.itemsGross=t.gross;s.lineDisc=t.lineDisc;s.billDisc=t.billDisc;s.itemsNet=t.itemsNet;s.chargeLines=t.charges;s.tax=t.tax;s.total=t.total;
   for(const [pid,delta] of Object.entries(stockDeltas)){const p=prod(pid);if(delta){p.stock+=delta;move(p,-delta,'adjustment',s.no,reason);}}
+  for(const i of removedDevices){const p=prod(i.pid),d=p.devs.find(x=>x.id===i.dev);d.status='in';d.saleId='';d.soldAt='';d.warrantyEnd='';recount(p);move(p,1,'adjustment',s.no,reason||`Serialized device ${i.imei||i.dev} removed from bill`);}
   if(customer&&Math.abs(dueDelta)>0.005)customer.balance=r2(num(customer.balance)+dueDelta);
   s.change=r2(Math.max(0,num(s.paid)-s.total));const adjustment={at:nowISO(),user:me.name,reason,oldTotal:num(original.reduce((a,i)=>a+i.qty*i.price-i.disc,0)),newTotal:s.total,oldItems:original,newItems:s.items.map(i=>({...i})),dueDelta};s.adjustments=Array.isArray(s.adjustments)?s.adjustments:[];s.adjustments.push(adjustment);
   log('sale adjustment',`${s.no}: ${reason || 'No reason provided'} (${money(adjustment.oldTotal)} → ${money(s.total)})`);save();cart=[];ps.adjustmentId='';ps.adjustmentReason='';ps.adjustmentCustomerPending=false;ps.dVal=0;ps.a1=ps.a2='';ps.cust='';ps.customerReady=false;nav('sales');toast('Bill adjusted');
