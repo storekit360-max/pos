@@ -138,14 +138,23 @@ window.addEventListener('online', () => { if (LIVE_WEB) refreshCloudThenSync(); 
 // signed-in session must be fetched from the tenant's cloud snapshot.
 function startCloudPolling() {
   if (!LIVE_WEB || cloudPollTimer) return;
+  // Each tick is only a tiny revision check (see refreshCloudThenSync), so it is cheap; it pauses while the tab
+  // is hidden and catches up the moment the cashier comes back.
   cloudPollTimer = setInterval(() => {
+    if (document.hidden) return;
     if (me && navigator.onLine && !cloudMutationId) refreshCloudThenSync();
-  }, 2000);
+  }, 4000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && me && navigator.onLine && !cloudMutationId) refreshCloudThenSync(); });
 }
 async function refreshCloudThenSync() {
   if (!LIVE_WEB || !me || !navigator.onLine) return;
   if (cloudRefreshPromise) return cloudRefreshPromise;
   cloudRefreshPromise = (async () => { try {
+    // Ask only for the revision number first. The whole shop snapshot is downloaded only when it really changed.
+    if (cloudBaseData && !cloudMutationId) {
+      const probe = await fetch('/api/data?meta=1',{credentials:'same-origin',cache:'no-store'});
+      if (probe.ok) { const meta = await probe.json(); if (meta && meta.revision === cloudRevision) { cloudLastError = ''; return; } }
+    }
     const r = await fetch('/api/data',{credentials:'same-origin'}), response=await r.json();
     if (r.status === 401) { me=null; loginScreen(); return; }
     if (r.status === 403 && response.code === 'TENANT_SUSPENDED') { cloudLastError='This shop is suspended. Unsynced local edits remain on this device.'; me=null; loginScreen(); showCloudSyncStatus(); return; }
@@ -164,7 +173,7 @@ async function refreshCloudThenSync() {
       if (typeof applyTheme === 'function') applyTheme();
       if (typeof syncBranding === 'function') syncBranding();
       if (typeof nav === 'function' && me) nav(current);
-    }
+    } else { cloudRevision = response.revision; }   // same content, newer revision: adopt it so the next probe matches
     if (cloudMutationId) queueCloudSync();
     cloudLastError = '';
   } catch (_) { cloudLastError='Offline changes remain saved on this device and will sync when reconnected.'; }

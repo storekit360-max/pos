@@ -1,19 +1,31 @@
 'use strict';
 const { db } = require('./_db');
 const { json, authorized } = require('./_http');
-const { ensureMain, tenantId, license, tenantForRequest } = require('./_tenant');
+const { tenantId, license, tenantForRequest } = require('./_tenant');
+// The 4-second sync probe (?meta=1) only needs to know whether the shop is still allowed to sync, so its licence
+// check may be up to 20 seconds old. Full reads and every save still use a fresh check.
+const licenseCache = new Map();
+async function cachedLicense(database, tid) {
+  const hit = licenseCache.get(tid);
+  if (hit && Date.now() - hit.at < 20000) return hit.value;
+  const value = await license(database, tid);
+  if (licenseCache.size > 500) licenseCache.clear();
+  licenseCache.set(tid, { at: Date.now(), value });
+  return value;
+}
 module.exports = async (req,res) => {
   const s = authorized(req,res); if (!s) return;
   try {
-    const database = await db(); await ensureMain(database);
+    // license() already waits for ensureMain(), so it no longer blocks the other reads before they start.
+    const database = await db({ fast: true });
     const tid = tenantId(s), users = database.collection('users'), state = database.collection('pos_state');
     const isGet = req.method === 'GET', metaOnly = isGet && req.query?.meta === '1';
     // Independent reads run together instead of one after another. The 2-second
-    // sync poll uses ?meta=1, which now reads only the revision, not the whole shop.
+    // sync probe uses ?meta=1, which reads only the revision, not the whole shop.
     const [hostTenant, user, entitlement, doc, userList] = await Promise.all([
       tenantForRequest(database,req),
       users.findOne({id:s.userId,tenantId:tid,active:true}),
-      license(database,tid),
+      metaOnly ? cachedLicense(database,tid) : license(database,tid),
       isGet ? state.findOne({_id:tid}, metaOnly ? {projection:{revision:1,updatedAt:1}} : {}) : null,
       isGet && !metaOnly ? users.find({tenantId:tid}, {projection:{_id:0,hash:0,tenantId:0}}).toArray() : null
     ]);

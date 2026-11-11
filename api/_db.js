@@ -115,7 +115,8 @@ async function ensureIndexes(database) {
     });
     // Performance-only indexes never block a request. They are created in the
     // background once per server instance; createIndex is a no-op if present.
-    indexesPromise.then(() => ensureOptionalIndexes(database)).catch(() => {});
+    // Started a couple of seconds later so these ~20 index calls never compete with the first requests for pooled connections.
+    indexesPromise.then(() => { const t = setTimeout(() => ensureOptionalIndexes(database), 2500); if (t.unref) t.unref(); }).catch(() => {});
   }
   await indexesPromise;
 }
@@ -139,7 +140,9 @@ function ensureOptionalIndexes(database) {
   }));
 }
 
-async function db() {
+// db({ fast: true }) is for read paths (status, session, data sync). They do not depend on the unique indexes,
+// so they no longer wait for the index check on a cold start; it still runs, just off the critical path.
+async function db(opts = {}) {
   const uri = readUri();
   if (!uri) {
     throw publicError(
@@ -154,6 +157,7 @@ async function db() {
   }
   const client = await clientPromise;
   const database = client.db(process.env.MONGODB_DB || DEFAULT_DB_NAME);
+  if (opts && opts.fast) { ensureIndexes(database).catch(() => {}); return database; }
   await ensureIndexes(database);
   return database;
 }

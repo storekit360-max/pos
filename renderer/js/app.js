@@ -204,19 +204,34 @@ async function liveSignIn(username, password) {
   me = result.user; licenseInfo=result.license||null; log('login', me.username); shell();
 }
 
-async function completeLoginHandoff() {
+// Network half of the sign-in handoff. It does not touch the screen, so boot() can start it at once, alongside the
+// status check, instead of waiting for it. The handoff reply already carries the signed-in user and licence, so the
+// extra /api/auth call that used to follow it is only a fallback.
+async function fetchLoginHandoff() {
   const params=new URLSearchParams(location.search), token=params.get('handoff');
-  if(!token)return false;
+  if(!token)return null;
   params.delete('handoff');
   history.replaceState(null,'',location.pathname+(params.size?`?${params}`:'')+location.hash);
-  showProcessing('Signing you in…','Opening your shop securely.');
   const r=await fetchWithTimeout('/api/auth?mode=handoff',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({token})});
-  await readApiResponse(r,'Sign-in could not be completed');
-  const signed=await fetchWithTimeout('/api/auth',{credentials:'same-origin',cache:'no-store'}), status=await readApiResponse(signed,'Could not load your shop');
-  if(!status.authenticated)throw new Error('Sign-in could not be completed. Please try again.');
-  const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud,'Could not load cloud data');
+  const result=await readApiResponse(r,'Sign-in could not be completed');
+  let status={authenticated:!!result.user,user:result.user,license:result.license};
+  const cloudRequest=fetchWithTimeout('/api/data',{credentials:'same-origin'});
+  if(!result.user){
+    const signed=await fetchWithTimeout('/api/auth',{credentials:'same-origin',cache:'no-store'});
+    status=await readApiResponse(signed,'Could not load your shop');
+  }
+  if(!status.authenticated||!status.user){cloudRequest.catch(()=>{});throw new Error('Sign-in could not be completed. Please try again.');}
+  const response=await readApiResponse(await cloudRequest,'Could not load cloud data');
+  return {status,response};
+}
+function applyLoginHandoff({status,response}) {
   cloudRevision=response.revision;cloudBaseData=JSON.parse(JSON.stringify(response.data));cloudMutationId='';db=normalizeData(response.data);
   me=status.user;licenseInfo=status.license||null;applyTenantBranding();localStorage.setItem(LS_KEY,JSON.stringify(db));hideProcessing();shell();startCloudPolling();
+}
+async function completeLoginHandoff() {
+  if(!location.search.includes('handoff='))return false;
+  showProcessing('Signing you in…','Opening your shop securely.');
+  applyLoginHandoff(await fetchLoginHandoff());
   return true;
 }
 
@@ -331,26 +346,35 @@ document.addEventListener('keydown', e => {
     // Do not show a sign-in form until this host and any saved session have
     // been checked. In particular, an unknown tenant host must not look valid.
     db = defaults();
+    let hadCache = false;
     // Use this tenant's last local snapshot immediately for a warm start. It
     // remains provisional until the server confirms the session and revision.
     try {
       const cached = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
       if (cached && typeof cached === 'object' && !Array.isArray(cached)) {
         db = normalizeData(cached);
+        hadCache = true;
         applyTheme();
       }
     } catch (_) { db = defaults(); }
     startupScreen();
+    // Start the slow requests immediately and in parallel instead of one after another:
+    //  - arriving from the main-domain sign-in: the handoff + shop data (no need to wait for the status check);
+    //  - returning to a shop used on this device: the shop data, speculatively (ignored if the session turns out to be gone).
+    const hasHandoff = location.search.includes('handoff=');
+    let handoffPromise = null, dataPromise = null;
+    if (hasHandoff) { handoffPromise = fetchLoginHandoff(); handoffPromise.catch(() => {}); }
+    else if (hadCache) { dataPromise = fetchWithTimeout('/api/data',{credentials:'same-origin'}); dataPromise.catch(() => {}); }
     // Web local storage is a cache only; cloud data below is authoritative.
     let status, setup, signed;
     try {
       [status, signed] = await Promise.all([
         fetchWithTimeout('/api/auth?mode=status',{credentials:'same-origin'}),
-        fetchWithTimeout('/api/auth',{credentials:'same-origin'})
+        hasHandoff ? null : fetchWithTimeout('/api/auth',{credentials:'same-origin'})
       ]);
       const responses = await Promise.all([
         readApiResponse(status, 'Could not check live account setup'),
-        readApiResponse(signed, 'Could not check sign-in status')
+        signed ? readApiResponse(signed, 'Could not check sign-in status') : { authenticated: false }
       ]);
       setup = responses[0]; signed = responses[1];
     } catch (err) {
@@ -368,13 +392,13 @@ document.addEventListener('keydown', e => {
     }
     applyTenantBranding();
     licenseInfo=signed.license||setup.license||null;
-    if (location.search.includes('handoff=')) {
-      try { if(await completeLoginHandoff()){startupReady=true;window.updateUi?.start();return;} }
+    if (hasHandoff) {
+      try { showProcessing('Signing you in…','Opening your shop securely.'); applyLoginHandoff(await handoffPromise); startupReady=true;window.updateUi?.start();return; }
       catch(err){hideProcessing();cloudLastError=err.message||'Sign-in could not be completed. Please try again.';}
     }
     if (setup.setupRequired && !signed.authenticated) { liveSetupScreen(); window.updateUi?.start(); return; }
     if (signed.authenticated) {
-      const cloud=await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
+      const cloud=dataPromise ? await dataPromise : await fetchWithTimeout('/api/data',{credentials:'same-origin'}), response=await readApiResponse(cloud, 'Could not load cloud data');
       if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) throw new Error('The shop data is missing or invalid. Contact support to restore this shop.');
       cloudRevision=response.revision; cloudBaseData=JSON.parse(JSON.stringify(response.data)); cloudMutationId=''; db=normalizeData(response.data);
       applyTenantBranding();
@@ -416,3 +440,11 @@ document.addEventListener('keydown', e => {
   const root = document.querySelector('#app');
   if (root) root.innerHTML = `<div class="login"><div class="card"><h2>Could not start POS</h2><p class="mut">${esc(err && err.message ? err.message : err)}</p><p>Close the app and start it again. If this keeps happening, share this message with support.</p><button class="btn btn-p" onclick="location.reload()">Retry</button></div></div>`;
 });
+
+// Quotation/invoice fonts (about 110 KB) are only needed when a document is printed. Load them once the first
+// screen is interactive, instead of making every sign-in wait for them.
+(() => {
+  const load = () => { if (window.QFONTS || document.querySelector('script[data-qfonts]')) return; const s = document.createElement('script'); s.src = 'js/qfonts.js'; s.async = true; s.dataset.qfonts = '1'; document.head.appendChild(s); };
+  const idle = () => ('requestIdleCallback' in window ? requestIdleCallback(load, { timeout: 4000 }) : setTimeout(load, 1500));
+  if (document.readyState === 'complete') idle(); else window.addEventListener('load', idle, { once: true });
+})();

@@ -6,30 +6,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POS360</title>
 <link id="site-favicon" rel="icon" href="data:,">
-<script>
-// Apply the last known shop theme before the stylesheet paints. The cache is
-// only a presentation hint; authenticated cloud data remains authoritative.
-(() => {
-  let accent = '#f97316', dark = false;
-  try {
-    const tenant = location.hostname.split('.')[0] || 'main';
-    const cached = JSON.parse(localStorage.getItem(`thesmart_pos_theme:${tenant}`) || 'null');
-    if (cached && /^#[0-9a-f]{6}$/i.test(cached.accent || '')) accent = cached.accent;
-    dark = !!cached?.dark;
-  } catch (_) {}
-  document.documentElement.style.setProperty('--acc', accent);
-  document.documentElement.style.setProperty('--acc2', accent);
-  if (dark) document.documentElement.classList.add('dark');
-})();
-</script>
+<script src="js/theme-boot.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div class="login startup" role="status" aria-live="polite"><div class="card startup-card"><div class="startup-mark" aria-hidden="true"><span>POS<span>360</span></span></div><div class="startup-progress" aria-hidden="true"><i></i></div><p class="startup-kicker">POS360</p><h2 style="margin:4px 0">Connecting to your shop</h2><p class="mut">Checking your sign-in and loading the latest shop data.</p></div></div></div>
 <div id="toasts"></div>
 <script src="js/diagnostics.js"></script>
 <script src="js/core.js"></script>
-<script src="js/qfonts.js"></script>
 <script src="js/pages.js"></script>
 <script src="js/pages2.js"></script>
 <script src="js/updater-ui.js"></script>

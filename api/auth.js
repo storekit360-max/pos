@@ -10,7 +10,7 @@ const Billing = require('./_billing');
 const publicUser = (u) => { const out = { ...u }; delete out._id; delete out.hash; delete out.tenantId; delete out.sessionVersion; return out; };
 // Licence summary shown in the UI. The two lookups are independent, so run them together.
 async function licenseView(database, tid, entitlement, opts = {}) {
-  const [rows, notices] = await Promise.all([database.collection('superadmin_settings').find({_id:{$in:['global',Billing.SETTINGS_ID]}}).toArray(), announcements(database,tid)]);
+  const [rows, notices] = await Promise.all([database.collection('superadmin_settings').find({_id:{$in:['global',Billing.SETTINGS_ID]}},{projection:{siteLogo:0,siteFavicon:0,smsApiToken:0}}).toArray(), announcements(database,tid)]);
   const settings = rows.find(x=>x._id==='global'), { _id: _skip, ...billingSettings } = rows.find(x=>x._id===Billing.SETTINGS_ID) || {};
   const support = billingSettings.supportContact || settings?.supportContact || '';
   const view = {state:entitlement.state,expiresAt:entitlement.tenant?.expiresAt||entitlement.tenant?.trialEndsAt||null,daysLeft:entitlement.daysLeft,plan:entitlement.tenant?.planSnapshot?.name||'Standard',message:entitlement.state==='expired'?'Subscription payment is due. Pay the outstanding amount below; access remains available while super admin confirms payment.':entitlement.state==='grace'?`Your subscription is in its grace period (${entitlement.daysLeft} days remaining).`:'',announcements:notices};
@@ -18,18 +18,54 @@ async function licenseView(database, tid, entitlement, opts = {}) {
   if (!opts.publicView && entitlement.tenant) view.billing = Billing.view(entitlement.tenant, { monthlyFee: Billing.DEFAULT_FEE, currency: 'LKR', ...billingSettings }, entitlement.state);
   return view;
 }
+// The site logo and favicon are stored as data URIs (up to ~1.5 MB each). They used to be copied into every status
+// reply. Now the reply carries a small versioned image URL that the browser caches; the version is built in the
+// database from the stored size and tail, so the image itself is not read here.
+const BRAND_FIELDS = { logo: 'siteLogo', favicon: 'siteFavicon' };
+async function brandInfo(database) {
+  const settings = database.collection('superadmin_settings');
+  try {
+    const len = (f) => ({ $strLenBytes: { $ifNull: [`$${f}`, ''] } });
+    const tail = (f) => ({ $substrBytes: [{ $ifNull: [`$${f}`, ''] }, { $max: [0, { $subtract: [len(f), 24] }] }, 24] });
+    const [row] = await settings.aggregate([{ $match: { _id: 'global' } }, { $project: { _id: 0, logoLen: len('siteLogo'), favLen: len('siteFavicon'), logoTail: tail('siteLogo'), favTail: tail('siteFavicon') } }]).toArray();
+    const url = (kind, n, t) => n ? `/api/auth?mode=brand&k=${kind}&v=${crypto.createHash('sha1').update(`${n}:${t}`).digest('hex').slice(0, 10)}` : '';
+    return { logo: url('logo', row?.logoLen, row?.logoTail), favicon: url('favicon', row?.favLen, row?.favTail) };
+  } catch (error) {
+    // Safe fallback: previous behaviour (inline data URIs) if the aggregation is unavailable.
+    console.error('Brand lookup fell back to inline images:', error.message);
+    const row = (await settings.findOne({ _id: 'global' }, { projection: { _id: 0, siteLogo: 1, siteFavicon: 1 } })) || {};
+    return { logo: row.siteLogo || '', favicon: row.siteFavicon || '' };
+  }
+}
+async function sendBrandImage(database, req, res) {
+  const params = new URL(req.url, 'https://pos.invalid').searchParams;
+  const kind = params.get('k') === 'favicon' ? 'favicon' : 'logo', field = BRAND_FIELDS[kind];
+  const row = await database.collection('superadmin_settings').findOne({ _id: 'global' }, { projection: { _id: 0, [field]: 1 } });
+  const match = /^data:(image\/(?:png|jpeg|webp|x-icon|vnd\.microsoft\.icon));base64,([a-z0-9+/=]+)$/i.exec(String(row?.[field] || ''));
+  if (!match) { res.statusCode = 404; res.setHeader('Cache-Control', 'no-store'); return res.end(); }
+  const body = Buffer.from(match[2], 'base64'), etag = `"${crypto.createHash('sha1').update(body).digest('hex').slice(0, 20)}"`;
+  res.setHeader('Content-Type', match[1].toLowerCase());
+  res.setHeader('ETag', etag);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  // A versioned URL (?v=) changes whenever the image changes, so it can be cached for a year.
+  res.setHeader('Cache-Control', params.get('v') ? 'public, max-age=31536000, immutable' : 'public, max-age=300, stale-while-revalidate=3600');
+  if (req.headers['if-none-match'] === etag) { res.statusCode = 304; return res.end(); }
+  res.statusCode = 200; res.setHeader('Content-Length', body.length); return res.end(body);
+}
 module.exports = async (req,res) => {
   res.setHeader('Cache-Control','no-store');
   if (['POST','PUT','DELETE'].includes(req.method) && req.headers.origin) { try { if (new URL(req.headers.origin).host !== req.headers.host) return json(res,403,{error:'Cross-origin request rejected'}); } catch { return json(res,403,{error:'Invalid request origin'}); } }
   try {
-    const database = await db(), users = database.collection('users');
+    const database = await db({ fast: req.method === 'GET' }), users = database.collection('users');
     const requestedMode = new URL(req.url,'https://pos.invalid').searchParams.get('mode');
     const hostTenant = await tenantForRequest(database, req);
     const requestHost=String(req.headers.host||'').trim().toLowerCase().replace(/:\d+$/,'');
     const rootHost=!!rootDomain(req)&&requestHost===rootDomain(req);
     if (req.method === 'POST' && !['setup','register','login','handoff'].includes(requestedMode) && !authorized(req,res)) return;
     if (req.method === 'GET' && req.url.split('?')[0] === '/api/auth') {
-      if (requestedMode === 'status' && rootHost) {const siteBrand=(await database.collection('superadmin_settings').findOne({_id:'global'},{projection:{_id:0,siteLogo:1,siteFavicon:1}}))||{};return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenantCreationOnly:true,siteBranding:{logo:siteBrand.siteLogo||'',favicon:siteBrand.siteFavicon||''}});}
+      if (requestedMode === 'brand') return sendBrandImage(database, req, res);
+      if (requestedMode === 'status' && rootHost) {const siteBrand=await brandInfo(database);return json(res,200,{setupRequired:false,registrationOpen:process.env.POS_REGISTRATION_OPEN === 'true',tenantCreationOnly:true,siteBranding:{logo:siteBrand.logo,favicon:siteBrand.favicon}});}
       if (requestedMode === 'slug') {
         const slug=String(new URL(req.url,'https://pos.invalid').searchParams.get('value')||'').trim().toLowerCase();
         if(!/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug))return json(res,200,{available:false,valid:false});
@@ -44,6 +80,7 @@ module.exports = async (req,res) => {
         if (hostSlug(req) && !hostTenant) return json(res,404,{error:'Shop subdomain was not found'});
         const scope = hostTenant?._id || 'main', registrationOpen = process.env.POS_REGISTRATION_OPEN === 'true';
         // These three reads are independent; running them together removes two sequential database round trips.
+        const brandPromise = brandInfo(database); brandPromise.catch(() => {});
         const [state, anyTenant, existing] = await Promise.all([
           database.collection('pos_state').findOne({_id:scope},{projection:{_id:1,'data.settings.business':1,'data.settings.tagline':1,'data.settings.accent':1}}),
           database.collection('tenants').findOne({}, {projection:{_id:1}}),
@@ -52,9 +89,9 @@ module.exports = async (req,res) => {
         const initialized = !!state;
         if (!anyTenant && !initialized && (await users.countDocuments())===0) return json(res,200,{setupRequired:true});
         if (existing || initialized || (scope==='main' && anyTenant)) {
-          const entitlement = await license(database,scope), view = await licenseView(database,scope,entitlement,{publicView:true}), publicSettings = state?.data?.settings||{};
-          const siteBrand=(await database.collection('superadmin_settings').findOne({_id:'global'},{projection:{_id:0,siteLogo:1,siteFavicon:1}}))||{};
-          return json(res,200,{setupRequired:false,registrationOpen,tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316',logo:siteBrand.siteLogo||''}},siteBranding:{favicon:siteBrand.siteFavicon||'',logo:siteBrand.siteLogo||''},license:view});
+          const entitlement = await license(database,scope), publicSettings = state?.data?.settings||{};
+          const [view, siteBrand] = await Promise.all([licenseView(database,scope,entitlement,{publicView:true}), brandPromise]);
+          return json(res,200,{setupRequired:false,registrationOpen,tenant:{name:hostTenant?.name||'The Smart POS',slug:hostTenant?.slug||'main',branding:{business:String(publicSettings.business||hostTenant?.name||'The Smart POS').slice(0,120),tagline:String(publicSettings.tagline||'').slice(0,160),accent:/^#[0-9a-f]{6}$/i.test(publicSettings.accent||'')?publicSettings.accent:'#f97316',logo:siteBrand.logo}},siteBranding:{favicon:siteBrand.favicon,logo:siteBrand.logo},license:view});
         }
         return json(res,200,{setupRequired:false,registrationOpen});
       }
