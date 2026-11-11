@@ -218,7 +218,54 @@ function drawSales() {
 }
 I.sq = v => { sf.q = v; drawSales(); }; I.sfrom = v => { sf.from = v; drawSales(); }; I.sto = v => { sf.to = v; drawSales(); };
 A.viewSale = id => { const s = db.sales.find(x => x.id === id);
-  modal('Invoice ' + s.no, receipt(s), `<button class="btn" data-act="closeModal">Close</button>${isMgr() && s.status === 'done' ? `<button class="btn btn-d" data-act="voidSale" data-id="${id}">Void</button>` : ''}${s.status === 'done' && (isMgr() || true) ? `<button class="btn" data-act="returnSale" data-id="${id}">Return items</button>` : ''}<button class="btn btn-p" data-act="printSale" data-id="${id}">🖨 Reprint</button>`); };
+  modal('Invoice ' + s.no, receipt(s), `<button class="btn" data-act="closeModal">Close</button>${isMgr() && s.status === 'done' ? `<button class="btn" data-act="adjustSale" data-id="${id}">Adjust bill</button><button class="btn btn-d" data-act="voidSale" data-id="${id}">Void</button>` : ''}${s.status === 'done' && (isMgr() || true) ? `<button class="btn" data-act="returnSale" data-id="${id}">Return items</button>` : ''}<button class="btn btn-p" data-act="printSale" data-id="${id}">🖨 Reprint</button>`); };
+// Adjustments append a revision to the original invoice. Stock, customer credit,
+// payments, and the sale totals are changed by their difference and remain in
+// the normal local/cloud save queue.
+A.adjustSale = id => {
+  const s = db.sales.find(x => x.id === id);
+  if (!s || s.status !== 'done') return toast('Only completed bills can be adjusted', 'err');
+  if (s.items.some(i => i.returned)) return toast('Bills with returns cannot be adjusted', 'err');
+  const body = `<form id="saleAdjustForm"><p class="mut">Change quantities to add or remove items. Removed quantities return to stock. Payments and discounts stay as recorded; any new unpaid amount is added to the customer's balance.</p><div class="tw"><table><thead><tr><th>Item</th><th>Qty</th><th>New qty</th><th>Unit price</th><th>Discount</th></tr></thead><tbody>${s.items.map((i,n)=>`<tr><td>${esc(i.name)}${i.imei?`<br><small>${esc(i.imei)}</small>`:''}</td><td>${i.qty}</td><td><input name="q${n}" type="number" min="${i.returned||0}" step="1" value="${i.qty}" style="width:85px" ${i.dev?'disabled':''}></td><td>${money(i.price)}</td><td>${money(i.disc)}</td></tr>`).join('')}</tbody></table></div><h4>Add items</h4><div class="tw"><table><thead><tr><th>Product</th><th>Available</th><th>Qty</th></tr></thead><tbody>${db.products.filter(p=>p.active!==false).map(p=>`<tr><td>${esc(p.name)}</td><td>${p.tracked?p.devs.filter(d=>d.status==='in').length:p.stock}</td><td><input name="a${esc(p.id)}" type="number" min="0" step="1" value="0" style="width:85px" ${p.tracked?'disabled':''}></td></tr>`).join('')}</tbody></table></div><label class="f"><span>Reason for adjustment *</span><input name="reason" required maxlength="240" placeholder="Customer added an item"></label></form>`;
+  modal('Adjust bill ' + s.no, body, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn btn-p" data-act="saveSaleAdjustment" data-id="${id}">Save adjustment</button>`, true);
+};
+A.saveSaleAdjustment = async (id, el) => {
+  const s=db.sales.find(x=>x.id===id), form=el.closest('.ov')?.querySelector('#saleAdjustForm');
+  if(!s||!form||s.status!=='done'||s.items.some(i=>i.returned)) return toast('This bill can no longer be adjusted','err');
+  const reason=form.elements.reason.value.trim(); if(!reason) return toast('Enter an adjustment reason','err');
+  const oldTotal=num(s.total), oldDue=r2(oldTotal-num(s.paid)), oldItems=s.items.map(i=>({...i})), revised=oldItems.map(i=>({...i}));
+  const added=[];
+  for(let n=0;n<oldItems.length;n++){
+    const i=revised[n]; if(i.dev) continue;
+    const q=Number(form.elements['q'+n]?.value); if(!Number.isInteger(q)||q<num(i.returned||0)) return toast('Quantity cannot be less than the quantity already returned','err');
+    if(!prod(i.pid)) return toast(`Product missing: ${i.name}`,'err');
+    i.qty=q; if(q===0) revised.splice(n,1);
+  }
+  for(const p of db.products.filter(x=>x.active!==false&&!x.tracked)){
+    const q=Number(form.elements['a'+p.id]?.value||0); if(!Number.isInteger(q)||q<0) return toast('Added quantities must be whole numbers','err');
+    if(q){const line={pid:p.id,name:p.name,qty:q,price:num(p.price),disc:0,cost:num(p.cost),dev:null,imei:'',warrantyM:p.warranty||0,returned:0}; added.push(line);}
+  }
+  const required={}; for(let n=0;n<revised.length;n++){const i=revised[n];if(!i.dev){const original=oldItems[n];const previously=original&&!original.dev?original.qty:0;const delta=i.qty-previously;if(delta>0)required[i.pid]=(required[i.pid]||0)+delta;}}
+  for(const i of added) required[i.pid]=(required[i.pid]||0)+i.qty;
+  for(const [pid,q] of Object.entries(required)){const p=prod(pid);if(q>p.stock)return toast(`Only ${p.stock} additional ${p.name} in stock`,'err');}
+  if(!revised.length&&!added.length) return toast('A bill must keep at least one item','err');
+  revised.push(...added);
+  const gross=r2(revised.reduce((a,i)=>a+i.qty*i.price,0)), lineDisc=r2(revised.reduce((a,i)=>a+num(i.disc),0));
+  const billDisc=Math.min(num(s.billDisc),Math.max(0,gross-lineDisc)); const itemsNet=r2(gross-lineDisc);
+  const charges=effectiveCharges().map(c=>({name:c.name,rate:c.rate,amount:r2((itemsNet-billDisc)*c.rate/100)}));
+  const newTax=r2(charges.reduce((a,c)=>a+c.amount,0)), newTotal=r2(itemsNet-billDisc+newTax), newDue=r2(Math.max(0,newTotal-num(s.paid))), dueDelta=r2(newDue-oldDue), customer=cust(s.customerId);
+  if(dueDelta>0.005&&!customer) return toast('Select a customer before increasing an unpaid balance','err');
+  if(dueDelta>0.005&&customer?.limit&&num(customer.balance)+dueDelta>customer.limit) return toast('Customer credit limit exceeded','err');
+  const stockDeltas={}; for(let n=0;n<oldItems.length;n++){const i=oldItems[n];if(i.dev)continue;const updated=revised[n];const newQty=updated&&!updated.dev?updated.qty:0;stockDeltas[i.pid]=(stockDeltas[i.pid]||0)+i.qty-newQty;}
+  for(const i of added) stockDeltas[i.pid]=(stockDeltas[i.pid]||0)-i.qty;
+  s.items=revised;s.itemsGross=gross;s.lineDisc=lineDisc;s.billDisc=billDisc;s.itemsNet=itemsNet;s.chargeLines=charges;s.tax=newTax;s.total=newTotal;
+  for(const [pid,delta] of Object.entries(stockDeltas)){const p=prod(pid);if(delta){p.stock+=delta;move(p,delta, 'adjustment',s.no,reason);}}
+  if(customer&&Math.abs(dueDelta)>0.005) customer.balance=r2(num(customer.balance)+dueDelta);
+  const adjustment={at:nowISO(),user:me.name,reason,oldTotal,newTotal:s.total,oldItems,newItems:s.items.map(i=>({...i})),dueDelta};
+  s.adjustments=Array.isArray(s.adjustments)?s.adjustments:[];s.adjustments.push(adjustment);
+  s.change=r2(Math.max(0,num(s.paid)-s.total));
+  log('sale adjustment',`${s.no}: ${reason} (${money(oldTotal)} → ${money(s.total)})`);save();document.querySelectorAll('.ov').forEach(o=>o.remove());P.sales();toast('Bill adjusted');
+};
 A.voidSale = async id => {
   const s = db.sales.find(x => x.id === id); if (s.items.some(i => i.returned)) return toast('Sale has returns – cannot void', 'err');
   if (!(await confirmDlg(`Void invoice ${s.no}? Stock will be restored.`))) return;
