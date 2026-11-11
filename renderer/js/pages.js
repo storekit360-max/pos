@@ -73,7 +73,7 @@ function posTotals() {
 function effectiveCharges() { const c = Array.isArray(S().charges) ? S().charges.filter(x => x && x.enabled !== false && num(x.rate) > 0) : []; return c.length ? c : (num(S().taxRate) > 0 ? [{ name: 'VAT', rate: num(S().taxRate) }] : []); }
 P.pos = () => {
   const editing = ps.adjustmentId ? db.sales.find(s => s.id === ps.adjustmentId) : null;
-  view(`${editing ? `<div class="card" style="margin-bottom:12px"><b>Adjusting invoice ${esc(editing.no)}</b><p class="mut">Edit this bill in Point of Sale, then complete the adjustment to update the original invoice and its stock and balance.</p><label class="f"><span>Reason for adjustment *</span><input data-in="adjustmentReason" maxlength="240" placeholder="Customer added an item" value="${esc(ps.adjustmentReason)}"></label></div>` : ''}<div class="pos"><div class="l">
+  view(`${editing ? `<div class="card" style="margin-bottom:12px"><b>Adjusting invoice ${esc(editing.no)}</b><p class="mut">Edit this bill in Point of Sale, then complete the adjustment to update the original invoice and its stock and balance.</p></div>` : ''}<div class="pos"><div class="l">
 ${ps.customerReady ? `<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:12px"><div><small class="mut">Billing for</small><br><b>${esc(cust(ps.cust)?.name || '')}</b> · ${esc(cust(ps.cust)?.phone || '')}</div><span class="sp"></span><button class="btn btn-s" data-act="changePosCustomer">Change customer</button></div>` : `<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:12px"><div><b>No customer selected</b><br><small class="mut">Optional. You can complete this sale without customer details.</small></div><span class="sp"></span><button class="btn btn-p" data-act="togglePosPhonePad">${ps.phonePadOpen ? 'Hide phone entry' : 'Enter customer phone'}</button></div>${ps.phonePadOpen ? `<div class="card" style="margin-bottom:12px"><h3>Enter customer mobile number</h3><p class="mut">Enter a number to find an existing customer or register a new one.</p><div class="filters"><input data-in="posPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="Customer phone number" value="${esc(ps.customerPhone)}" style="flex:1"><button class="btn btn-p" data-act="lookupCustomer">Find customer</button></div><div class="pos-numpad" aria-label="Phone number keypad">${['1','2','3','4','5','6','7','8','9','Clear','0','⌫'].map(k => `<button class="btn" data-act="phoneKey" data-key="${k}" aria-label="${k === '⌫' ? 'Backspace' : k}">${k}</button>`).join('')}</div>${ps.customerMessage ? `<p class="mut">${esc(ps.customerMessage)}</p>` : ''}</div>` : ''}`}
 <div class="filters"><input id="scan" placeholder="📷 Scan barcode / IMEI and press Enter" style="flex:2;font-size:16px;border-color:var(--acc)" autofocus>
 <input data-in="posq" placeholder="Search product..." style="flex:1" value="${esc(ps.q)}">${sel('poscat', [['', 'All categories'], ...db.categories], ps.cat)}</div>
@@ -86,6 +86,11 @@ ${ps.customerReady ? `<div class="card" style="margin-bottom:12px;display:flex;a
 <div class="filters" style="margin:6px 0 8px">${sel('m2', [['', 'Split with…'], ...methods()], ps.m2)}<input data-in="a2" type="number" placeholder="Split amount" value="${ps.a2}" style="flex:1"></div>
 <button class="btn btn-p btn-lg" data-act="${editing ? 'completeSaleAdjustment' : 'completeSale'}">✔ ${editing ? 'Complete bill adjustment' : 'Complete Sale (F9)'}</button></div></div>`);
   drawGrid(); drawCart(); (ps.phonePadOpen && !ps.customerReady ? $('[data-in="posPhone"]') : $('#scan'))?.focus();
+};
+A.newSale = () => {
+  cart = [];
+  Object.assign(ps, { q: '', cat: '', cust: '', customerPhone: '', customerName: '', customerReady: false, phonePadOpen: false, customerMessage: '', dType: 'amt', dVal: 0, m1: 'Cash', a1: '', m2: '', a2: '', adjustmentId: '', adjustmentReason: '', adjustmentCustomerPending: false });
+  nav('pos');
 };
 // Treat Sri Lankan local numbers (07x…), country-code numbers (+947x…)
 // and their stored variants as the same number. Keep other numbers intact.
@@ -121,11 +126,7 @@ A.changePosCustomer = () => { ps.customerReady = false; ps.phonePadOpen = true; 
 function drawGrid() {
   const q = ps.q.toLowerCase();
   let list;
-  if (!q && !ps.cat) {
-    const recentIds = [];
-    [...db.sales].reverse().forEach(s => { if (s.status !== 'done') return; [...(s.items || [])].reverse().forEach(i => { if (i.pid && !recentIds.includes(i.pid)) recentIds.push(i.pid); }); });
-    list = recentIds.slice(0, 5).map(id => prod(id)).filter(p => p && p.active !== false);
-  } else list = db.products.filter(p => p.active !== false && (!ps.cat || p.category === ps.cat) && (!q || (p.name + p.sku + p.barcode + (p.model || '')).toLowerCase().includes(q))).slice(0, 60);
+  list = db.products.filter(p => p.active !== false && (!ps.cat || p.category === ps.cat) && (!q || (p.name + p.sku + p.barcode + (p.model || '')).toLowerCase().includes(q)));
   $('#grid').innerHTML = list.map(p => `<div class="pc" data-act="addProd" data-id="${p.id}"><b>${esc(p.name)}</b><div class="pr">${money(p.price)}</div><small class="${stockOf(p) <= 0 ? 'b-bad badge' : 'mut'}">Stock: ${stockOf(p)}${p.tracked ? ' · IMEI' : ''}</small></div>`).join('') || '<div class="empty">No products. Add some in Products.</div>';
 }
 function drawCart() {
@@ -241,14 +242,12 @@ A.adjustSale = id => {
 A.cancelSaleAdjustment = async () => { if(cart.length&&!(await confirmDlg('Cancel this bill adjustment?')))return; cart=[]; ps.adjustmentId='';ps.adjustmentReason='';ps.cust='';ps.customerReady=false;ps.customerPhone='';ps.dVal=0;ps.a1=ps.a2='';nav('sales'); };
 A.completeSaleAdjustment = id => {
   const s=db.sales.find(x=>x.id===ps.adjustmentId); if(!s||s.status!=='done'||s.items.some(i=>i.returned))return toast('This bill can no longer be adjusted','err');
-  const reason=String(ps.adjustmentReason||'').trim(); if(!reason)return toast('Enter an adjustment reason','err');
+  const reason=String(ps.adjustmentReason||'').trim();
   const original=s.items.map(i=>({...i})), revised=cart.filter(i=>i.qty>0).map(i=>({...i,returned:num(i.returned||0)}));
   if(!revised.length||revised.some(i=>!Number.isInteger(i.qty)||i.qty<0||!prod(i.pid)))return toast('Keep at least one valid product and use whole item quantities','err');
   const oldCounts={},newCounts={}; original.forEach(i=>{if(!i.dev)oldCounts[i.pid]=(oldCounts[i.pid]||0)+num(i.qty);}); revised.forEach(i=>{if(!i.dev)newCounts[i.pid]=(newCounts[i.pid]||0)+num(i.qty);});
   for(const pid of new Set([...Object.keys(oldCounts),...Object.keys(newCounts)])){const p=prod(pid),delta=(newCounts[pid]||0)-(oldCounts[pid]||0); if(delta>p.stock)return toast(`Only ${p.stock} additional ${p.name} in stock`,'err');}
   const t=posTotals(), oldDue=r2(Math.max(0,num(s.total)-num(s.paid))), newDue=r2(Math.max(0,t.total-num(s.paid))), dueDelta=r2(newDue-oldDue), customer=cust(s.customerId);
-  if(dueDelta>0.005&&!customer){ps.adjustmentCustomerPending=true;ps.customerReady=false;ps.cust='';ps.customerPhone='';ps.phonePadOpen=true;P.pos();return toast('Select a customer before increasing an unpaid balance','err');}
-  if(dueDelta>0.005&&ps.adjustmentCustomerPending&&ps.cust!==s.customerId)return toast('Choose the customer already on this invoice before continuing','err');
   if(dueDelta>0.005&&customer?.limit&&num(customer.balance)+dueDelta>customer.limit)return toast('Customer credit limit exceeded','err');
   const stockDeltas={}; for(const pid of new Set([...Object.keys(oldCounts),...Object.keys(newCounts)]))stockDeltas[pid]=(oldCounts[pid]||0)-(newCounts[pid]||0);
   s.items=revised.map(i=>({pid:i.pid,name:i.name,qty:i.qty,price:i.price,disc:i.disc,cost:i.cost,dev:i.dev,imei:i.imei,warrantyM:i.warrantyM,returned:i.returned||0}));
@@ -256,7 +255,7 @@ A.completeSaleAdjustment = id => {
   for(const [pid,delta] of Object.entries(stockDeltas)){const p=prod(pid);if(delta){p.stock+=delta;move(p,-delta,'adjustment',s.no,reason);}}
   if(customer&&Math.abs(dueDelta)>0.005)customer.balance=r2(num(customer.balance)+dueDelta);
   s.change=r2(Math.max(0,num(s.paid)-s.total));const adjustment={at:nowISO(),user:me.name,reason,oldTotal:num(original.reduce((a,i)=>a+i.qty*i.price-i.disc,0)),newTotal:s.total,oldItems:original,newItems:s.items.map(i=>({...i})),dueDelta};s.adjustments=Array.isArray(s.adjustments)?s.adjustments:[];s.adjustments.push(adjustment);
-  log('sale adjustment',`${s.no}: ${reason} (${money(adjustment.oldTotal)} → ${money(s.total)})`);save();cart=[];ps.adjustmentId='';ps.adjustmentReason='';ps.adjustmentCustomerPending=false;ps.dVal=0;ps.a1=ps.a2='';ps.cust='';ps.customerReady=false;nav('sales');toast('Bill adjusted');
+  log('sale adjustment',`${s.no}: ${reason || 'No reason provided'} (${money(adjustment.oldTotal)} → ${money(s.total)})`);save();cart=[];ps.adjustmentId='';ps.adjustmentReason='';ps.adjustmentCustomerPending=false;ps.dVal=0;ps.a1=ps.a2='';ps.cust='';ps.customerReady=false;nav('sales');toast('Bill adjusted');
 };
 A.voidSale = async id => {
   const s = db.sales.find(x => x.id === id); if (s.items.some(i => i.returned)) return toast('Sale has returns – cannot void', 'err');
