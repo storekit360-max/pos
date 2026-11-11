@@ -595,7 +595,8 @@
       smsOAuthEndpoint:field('OAuth 2.0 API endpoint (optional)','url',settings.smsOAuthEndpoint||'','smsOAuthEndpoint'),
       smsHttpEndpoint:field('HTTP API endpoint','url',settings.smsHttpEndpoint||'https://app.text.lk/api/v3/sms/send','smsHttpEndpoint'),
       smsApiToken:field(settings.smsTokenConfigured?'API token (saved; leave blank to keep it)':'API token','password','','smsApiToken'),
-      smsAdminPhone:field('Super admin phone number','tel',settings.smsAdminPhone||'','smsAdminPhone')
+      smsAdminPhone:field('Super admin phone number (e.g. 94771234567)','tel',settings.smsAdminPhone||'','smsAdminPhone'),
+      smsSenderId:field('Sender ID (your approved Text.lk sender name)','text',settings.smsSenderId||'TextLKDemo','smsSenderId')
     };
     Object.values(smsFields).forEach(x=>sms.append(x));
     sms.append(el('small','Uses Text.lk Bearer token authentication. OAuth endpoint is saved for reference; Text.lk v3 uses the API token directly.','muted'));
@@ -614,7 +615,7 @@
     brandingActions.append(btn('Clear favicon',()=>{previews[1].clear();}));
     const saveBranding=btn('Save logo and favicon',()=>busy(saveBranding,async()=>{await api('settings.branding.save',{siteLogo:previews[0].get(),siteFavicon:previews[1].get()});toast('Site logo and favicon saved');}), 'primary');brandingActions.append(saveBranding);
     const smsActions=rowIn(sms);
-    const saveSms=btn('Save Text.lk SMS settings',()=>busy(saveSms,async()=>{const payload={smsOAuthEndpoint:smsFields.smsOAuthEndpoint.control.value.trim(),smsHttpEndpoint:smsFields.smsHttpEndpoint.control.value.trim(),smsApiToken:smsFields.smsApiToken.control.value,smsAdminPhone:smsFields.smsAdminPhone.control.value.trim()};const d=await api('settings.sms.save',payload);settings={...settings,...d,smsApiToken:''};smsFields.smsApiToken.control.value='';smsFields.smsApiToken.control.placeholder=settings.smsTokenConfigured?'API token (saved; leave blank to keep it)':'API token';toast('Text.lk SMS settings saved');}), 'primary');smsActions.append(saveSms);
+    const saveSms=btn('Save Text.lk SMS settings',()=>busy(saveSms,async()=>{const payload={smsOAuthEndpoint:smsFields.smsOAuthEndpoint.control.value.trim(),smsHttpEndpoint:smsFields.smsHttpEndpoint.control.value.trim(),smsApiToken:smsFields.smsApiToken.control.value,smsAdminPhone:smsFields.smsAdminPhone.control.value.trim(),smsSenderId:smsFields.smsSenderId.control.value.trim()};const d=await api('settings.sms.save',payload);settings={...settings,...d,smsApiToken:''};smsFields.smsApiToken.control.value='';smsFields.smsApiToken.control.placeholder=settings.smsTokenConfigured?'API token (saved; leave blank to keep it)':'API token';toast('Text.lk SMS settings saved');}), 'primary');smsActions.append(saveSms);
   }
 
   /* ================= Routing ================= */

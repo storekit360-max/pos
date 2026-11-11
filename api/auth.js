@@ -130,12 +130,25 @@ module.exports = async (req,res) => {
         const sms=await database.collection('superadmin_settings').findOne({_id:'global'});
         if(sms?.smsApiToken&&sms?.smsAdminPhone){
           const token=require('./_sa_auth').decryptSecret(sms.smsApiToken);
+          // Text.lk needs the number as 94XXXXXXXXX (no +, spaces or leading 0).
+          let recipient=String(sms.smsAdminPhone).replace(/\D/g,'');
+          if(recipient.startsWith('00'))recipient=recipient.slice(2);
+          if(recipient.startsWith('0'))recipient='94'+recipient.slice(1);
+          else if(recipient.length===9)recipient='94'+recipient;
+          const senderId=String(sms.smsSenderId||process.env.TEXTLK_SENDER_ID||'TextLKDemo').trim();
           const message=`New pos created - ${phone} - ${shopName} - ${ownerName}`;
-          const response=await fetch(sms.smsHttpEndpoint||'https://app.text.lk/api/v3/sms/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify({recipient:sms.smsAdminPhone,sender_id:'TextLKDemo',type:'plain',message}),signal:AbortSignal.timeout(5000)});
+          const response=await fetch(sms.smsHttpEndpoint||'https://app.text.lk/api/v3/sms/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify({recipient,sender_id:senderId,type:'plain',message}),signal:AbortSignal.timeout(8000)});
           const result=await response.json().catch(()=>({}));
-          if(!response.ok||result.status==='error')console.error('Text.lk SMS notification failed:',response.status,result.message||'Provider returned an error');
+          const failed=!response.ok||String(result.status||'').toLowerCase()==='error';
+          const detail=String(result.message||result.error||'').slice(0,200);
+          if(failed)console.error('Text.lk SMS notification failed:',response.status,detail||'Provider returned an error');
+          // Keep a visible record in Super admin > Audit log (action sms.sent / sms.failed).
+          try{await require('./_sa_audit').audit(database,null,req,failed?'sms.failed':'sms.sent',failed?'system':'sms',id,id,failed?`Text.lk SMS failed (HTTP ${response.status}) sender ${senderId} to ${recipient}: ${detail||'no message'}`:`Text.lk SMS sent to ${recipient} for new POS ${shopName}`);}catch(_){}
         }
-      } catch(error) { console.error('Online POS SMS notification failed:',error.message); }
+      } catch(error) {
+        console.error('Online POS SMS notification failed:',error.message);
+        try{await require('./_sa_audit').audit(database,null,req,'sms.failed','system',id,id,`Text.lk SMS error: ${error.message}`);}catch(_){}
+      }
       return json(res,201,{ok:true,tenant:{name:shopName,slug},tenantUrl:`https://${slug}.${root}`,handoffToken,user:{id:owner.id,name:owner.name,email:owner.email,role:owner.role}});
     }
     if (mode === 'login') {
