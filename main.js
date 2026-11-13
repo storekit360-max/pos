@@ -645,9 +645,17 @@ ipcMain.handle('auth:recover-password', (_event, recoveryKey, username, newPassw
   const password = String(newPassword || '');
   if (!userName || password.length < 8 || password.length > 256) return { ok: false, error: 'Enter a username and a password with at least 8 characters' };
   const f = dataFile();
-  let data;
+  // Match db:load recovery behavior: if the current profile file is missing or
+  // damaged, accounts may still be available in the last atomic-write backup.
+  let data, sourceFile = f;
   try { data = JSON.parse(fs.readFileSync(f, 'utf8')); }
-  catch (_) { throw new Error('Local account data could not be read. No data was changed.'); }
+  catch (primaryError) {
+    try { data = JSON.parse(fs.readFileSync(f + '.prev', 'utf8')); sourceFile = f + '.prev'; }
+    catch (previousError) {
+      if (primaryError.code === 'ENOENT' && previousError.code === 'ENOENT') return { ok: false, error: 'No local account was found' };
+      throw new Error('Local account data could not be read. No data was changed.');
+    }
+  }
   if (!data || !Array.isArray(data.users)) return { ok: false, error: 'No local account was found' };
   const user = data.users.find(item => item && item.username === userName && item.active);
   if (!user) return { ok: false, error: 'Active username not found' };
@@ -658,7 +666,7 @@ ipcMain.handle('auth:recover-password', (_event, recoveryKey, username, newPassw
     const serialized = JSON.stringify(data);
     JSON.parse(serialized);
     fs.writeFileSync(tmp, serialized);
-    if (fs.existsSync(f)) fs.copyFileSync(f, f + '.prev');
+    if (fs.existsSync(f) && sourceFile === f) fs.copyFileSync(f, f + '.prev');
     fs.renameSync(tmp, f);
   } catch (e) {
     try { fs.rmSync(tmp, { force: true }); } catch (_) {}
