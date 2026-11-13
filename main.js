@@ -39,6 +39,9 @@ const dataFile = () => path.join(app.getPath('userData'), 'data.json');
 const logFile = () => path.join(app.getPath('userData'), 'backup-log.json');
 const licenseFile = () => path.join(app.getPath('userData'), 'license.json');
 const TRIAL_MS = 24 * 60 * 60 * 1000;
+// Offline recovery credential is validated only in the trusted main process.
+// Store only its SHA-256 digest so the plaintext key is never sent to the renderer.
+const OFFLINE_RECOVERY_KEY_HASH = '2c6680e03cb1a30ceced39a4663c55690149873526b3822878be87a94d2fe40e';
 const legacyLicenseKeys = {
   '12360b601a951d9e579d85656364c5c5123dfa641067161df1ac438071d46f04': 'permanent',
   '843a3a12c70d4c67064561d1e70360ceb01135d40f99898d518abbe0f092c4f8': 'permanent',
@@ -633,6 +636,31 @@ ipcMain.handle('branding:pick-logo', async () => {
 });
 
 // ---- data load/save (atomic write, keeps previous copy) ----
+ipcMain.handle('auth:recover-password', (_event, recoveryKey, username, newPassword) => {
+  if (app.isPackaged && !win?.webContents?.getURL().startsWith('file://')) return { ok: false, error: 'Password recovery is available only in the offline application' };
+  const normalizedKey = String(recoveryKey || '').trim().toUpperCase();
+  const keyHash = crypto.createHash('sha256').update(normalizedKey).digest('hex');
+  if (keyHash !== OFFLINE_RECOVERY_KEY_HASH) return { ok: false, error: 'Invalid recovery key' };
+  const userName = String(username || '').trim().toLowerCase();
+  const password = String(newPassword || '');
+  if (!userName || password.length < 8 || password.length > 256) return { ok: false, error: 'Enter a username and a password with at least 8 characters' };
+  const f = dataFile();
+  let data;
+  try { data = JSON.parse(fs.readFileSync(f, 'utf8')); }
+  catch (_) { throw new Error('Local account data could not be read. No data was changed.'); }
+  if (!data || !Array.isArray(data.users)) return { ok: false, error: 'No local account was found' };
+  const user = data.users.find(item => item && item.username === userName && item.active);
+  if (!user) return { ok: false, error: 'Active username not found' };
+  user.hash = crypto.createHash('sha256').update(user.username + ':' + password).digest('hex');
+  const tmp = f + '.tmp';
+  const serialized = JSON.stringify(data);
+  JSON.parse(serialized);
+  fs.writeFileSync(tmp, serialized);
+  if (fs.existsSync(f)) fs.copyFileSync(f, f + '.prev');
+  try { fs.renameSync(tmp, f); }
+  catch (e) { fs.rmSync(tmp, { force: true }); throw e; }
+  return { ok: true };
+});
 ipcMain.handle('db:load', () => {
   try { return JSON.parse(fs.readFileSync(dataFile(), 'utf8')); }
   catch (e) {

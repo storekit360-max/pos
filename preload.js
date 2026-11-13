@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('posApi', {
   load: () => ipcRenderer.invoke('db:load'),
   save: d => ipcRenderer.invoke('db:save', d),
+  recoverPassword: (recoveryKey, username, password) => ipcRenderer.invoke('auth:recover-password', recoveryKey, username, password),
   dataPath: () => ipcRenderer.invoke('db:path'),
   setBackup: c => ipcRenderer.invoke('backup:config', c),
   backupNow: () => ipcRenderer.invoke('backup:run'),
