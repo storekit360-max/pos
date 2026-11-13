@@ -62,8 +62,13 @@ label.f.ck{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:va
 .pc{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px;cursor:pointer}.pc:hover{border-color:var(--acc);transform:translateY(-1px)}
 .pc b{display:block;font-size:13px;min-height:34px}.pc .pr{color:var(--acc2);font-weight:700}
 .cartbox{display:flex;flex-direction:column;min-height:0;min-width:0}
-.lines{flex:1;overflow:auto;margin:8px -4px}
-.line{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:8px 4px;border-bottom:1px dashed var(--bd)}
+.lines{flex:1;overflow:auto;overflow-x:hidden;margin:8px -4px;min-width:0}
+.line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;padding:8px 4px;border-bottom:1px dashed var(--bd);min-width:0}
+.line>*{min-width:0}
+.line .qty{grid-column:1/-1;display:flex;flex-wrap:wrap;min-width:0;gap:4px;align-items:center}
+.line .qty input{flex:1 1 54px;width:auto!important;max-width:96px}
+.line .qty small{white-space:nowrap}
+.line .qty button{flex:0 0 24px}
 .qty{display:inline-flex;align-items:center;gap:4px}.qty button{width:24px;height:24px;border-radius:6px;border:1px solid var(--bd);background:var(--bg);cursor:pointer}
 .tot{display:flex;justify-content:space-between;padding:3px 0}.tot.big{font-size:22px;font-weight:800;color:var(--acc2)}
 .bars{display:flex;gap:10px;align-items:flex-end;height:150px;padding-top:10px}
@@ -78,6 +83,7 @@ label.f.ck{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:va
 .login .card{width:min(380px,100%);text-align:center}.login img{width:120px;height:120px;border-radius:50%;margin-bottom:8px}.login input{width:100%;margin:6px 0}
 .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}.tabs .btn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 @media(max-width:1100px){.pos{grid-template-columns:minmax(0,1fr);height:auto}.shell{grid-template-columns:70px minmax(0,1fr)}.nav a span,.brand div,.me{display:none}}
+@media(min-width:1101px) and (max-width:1450px){.pos{grid-template-columns:minmax(0,1fr) minmax(340px,38vw)}}
 
 /* Phone and narrow tablet layout */
 @media(max-width:700px){
