@@ -89,12 +89,45 @@ A.lock = A.logout;
 function loginScreen() {
   if (LIVE_WEB) return liveAuthScreen('login');
   const recoverPassword = window.posApi?.recoverPassword;
-  const canRecoverOffline = !LIVE_WEB && typeof recoverPassword === 'function';
+  const canRecoverOffline = true;
   $('#app').innerHTML = `<div class="login"><div class="card"><img ${effectiveLogo() ? `src="${esc(effectiveLogo())}"` : ''} alt="Business logo"><h2 style="margin:4px 0">${esc(S().business)}</h2><p class="mut">${esc(S().tagline || '')}</p>${LIVE_WEB && cloudLastError ? `<p class="mut" role="alert">${esc(cloudLastError)}</p>` : ''}<form id="lf"><input id="lu" placeholder="Username" autocomplete="username" autofocus required><input id="lp" type="password" placeholder="Password" autocomplete="current-password" required><button class="btn btn-p btn-lg" type="submit">Sign in to existing account</button></form>${canRecoverOffline ? '<button id="showRecovery" class="btn btn-s" type="button" style="margin-top:12px;width:100%">Reset password with recovery key</button><form id="recoveryForm" hidden style="margin-top:14px;text-align:left"><label class="f"><span>Username</span><input name="username" autocomplete="username" required></label><label class="f"><span>Recovery key</span><input name="key" autocomplete="off" required></label><label class="f"><span>New password (min 8)</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label><label class="f"><span>Repeat new password</span><input name="confirm" type="password" autocomplete="new-password" required></label><button class="btn btn-p" type="submit">Set new password</button></form>' : ''}${LIVE_WEB ? '<p class="mut" style="margin-top:14px;font-size:13px">Use an existing live POS account. Accounts and shop data are shared across browsers on this deployed site.</p>' : ''}</div></div>`;
   if (canRecoverOffline) {
     const recoveryForm = $('#recoveryForm');
     $('#showRecovery').onclick = () => { recoveryForm.hidden = !recoveryForm.hidden; };
-    recoveryForm.onsubmit = async e => { e.preventDefault(); const f = e.target.elements; if (f.password.value !== f.confirm.value) return toast('Passwords do not match', 'err'); try { const result = await recoverPassword(f.key.value, f.username.value, f.password.value); if (!result?.ok) return toast(result?.error || 'Password reset failed. No data was changed.', 'err'); e.target.reset(); e.target.hidden = true; toast('Password reset. Sign in with your new password.'); } catch (error) { toast(error?.message || 'Password reset failed. No data was changed.', 'err'); } };
+    recoveryForm.onsubmit = async e => {
+      e.preventDefault();
+      const f = e.target.elements;
+      if (f.password.value !== f.confirm.value) return toast('Passwords do not match', 'err');
+      try {
+        let result;
+        if (typeof recoverPassword === 'function') {
+          result = await recoverPassword(f.key.value, f.username.value, f.password.value);
+        } else {
+          // The browser-only offline build stores accounts in localStorage. Keep
+          // this fallback scoped to that local store; Electron always validates
+          // the recovery key and writes account data in the main process.
+          if (!globalThis.crypto?.subtle) return toast('Password recovery is unavailable in this browser. Use the installed desktop app.', 'err');
+          const keyDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(f.key.value.trim().toUpperCase()));
+          const keyHash = [...new Uint8Array(keyDigest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+          if (keyHash !== '2c6680e03cb1a30ceced39a4663c55690149873526b3822878be87a94d2fe40e') {
+            return toast('Invalid recovery key', 'err');
+          }
+          const userName = f.username.value.trim().toLowerCase();
+          const password = f.password.value;
+          if (!userName || password.length < 8 || password.length > 256) return toast('Enter a username and a password with at least 8 characters', 'err');
+          const localData = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+          if (!localData || !Array.isArray(localData.users)) return toast('No local account was found', 'err');
+          const user = localData.users.find(item => item && item.username === userName && item.active);
+          if (!user) return toast('Active username not found', 'err');
+          user.hash = await hashPw(user.username, password);
+          localStorage.setItem(LS_KEY, JSON.stringify(localData));
+          db = localData;
+          result = { ok: true };
+        }
+        if (!result?.ok) return toast(result?.error || 'Password reset failed. No data was changed.', 'err');
+        e.target.reset(); e.target.hidden = true; toast('Password reset. Sign in with your new password.');
+      } catch (error) { toast(error?.message || 'Password reset failed. No data was changed.', 'err'); }
+    };
   }
   $('#lf').onsubmit = async e => { e.preventDefault();
     if (!startupReady) return toast('Starting POS… please wait a moment.', 'err');
