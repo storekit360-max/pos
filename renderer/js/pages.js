@@ -70,6 +70,18 @@ function posTotals() {
   const tax = r2(charges.reduce((sum, c) => sum + c.amount, 0));
   return { gross: r2(gross), lineDisc: r2(ld), billDisc: bd, tax, charges, total: r2(base + tax), itemsNet: r2(after) };
 }
+const measureUnit = p => ['kg', 'L'].includes(p?.unit) ? p.unit : 'each';
+function parseSaleQty(raw, p) {
+  const value = String(raw ?? '').trim().replace(',', '.').toLowerCase();
+  const m = value.match(/^([0-9]*\.?[0-9]+)\s*(kg|g|l|ml)?$/);
+  if (!m) return NaN;
+  let q = Number(m[1]), u = m[2] || measureUnit(p);
+  if (u === 'g') { if (measureUnit(p) !== 'kg') return NaN; q /= 1000; }
+  if (u === 'ml') { if (measureUnit(p) !== 'L') return NaN; q /= 1000; }
+  if ((u === 'kg' && measureUnit(p) !== 'kg') || (u === 'l' && measureUnit(p) !== 'L')) return NaN;
+  if (measureUnit(p) === 'each' && (m[2] || !Number.isInteger(q))) return NaN;
+  return Math.round(q * 1000000) / 1000000;
+}
 function effectiveCharges() { const c = Array.isArray(S().charges) ? S().charges.filter(x => x && x.enabled !== false && num(x.rate) > 0) : []; return c.length ? c : (num(S().taxRate) > 0 ? [{ name: 'VAT', rate: num(S().taxRate) }] : []); }
 P.pos = () => {
   const editing = ps.adjustmentId ? db.sales.find(s => s.id === ps.adjustmentId) : null;
@@ -127,12 +139,12 @@ function drawGrid() {
   const q = ps.q.toLowerCase();
   let list;
   list = db.products.filter(p => p.active !== false && (!ps.cat || p.category === ps.cat) && (!q || (p.name + p.sku + p.barcode + (p.model || '')).toLowerCase().includes(q)));
-  $('#grid').innerHTML = list.map(p => `<div class="pc" data-act="addProd" data-id="${p.id}"><b>${esc(p.name)}</b><div class="pr">${money(p.price)}</div><small class="${stockOf(p) <= 0 ? 'b-bad badge' : 'mut'}">Stock: ${stockOf(p)}${p.tracked ? ' · IMEI' : ''}</small></div>`).join('') || '<div class="empty">No products. Add some in Products.</div>';
+  $('#grid').innerHTML = list.map(p => `<div class="pc" data-act="addProd" data-id="${p.id}"><b>${esc(p.name)}</b><div class="pr">${money(p.price)} / ${measureUnit(p)}</div><small class="${stockOf(p) <= 0 ? 'b-bad badge' : 'mut'}">Stock: ${stockOf(p)} ${measureUnit(p)}${p.tracked ? ' · IMEI' : ''}</small></div>`).join('') || '<div class="empty">No products. Add some in Products.</div>';
 }
 function drawCart() {
-  $('#lines').innerHTML = cart.length ? cart.map((i, n) => `<div class="line" style="${i.qty===0?'opacity:.55':''}"><div><b>${esc(i.name)}</b>${i.imei ? `<br><small class="mut">IMEI/SN ${esc(i.imei)}</small>` : ''}</div><div class="b r">${money(i.qty * i.price - i.disc)}</div>
-<div class="qty">${i.dev ? '<small class="mut">1 device</small>' : `<button data-act="qtyM" data-id="${n}">−</button><b>${i.qty}</b><button data-act="qtyP" data-id="${n}">+</button>`} <small class="mut">@</small><input data-in="lprice" data-n="${n}" type="number" value="${i.price}" style="width:80px;padding:3px 6px"> <small class="mut">disc</small><input data-in="ldisc" data-n="${n}" type="number" value="${i.disc || ''}" style="width:60px;padding:3px 6px"></div>
-<div class="r"><button class="btn btn-s btn-d" data-act="rmLine" data-id="${n}">✕</button></div></div>`).join('') : '<div class="empty">Scan or tap a product to begin</div>';
+  $('#lines').innerHTML = cart.length ? cart.map((i, n) => { const unit = measureUnit(prod(i.pid)); return `<div class="line" style="${i.qty===0?'opacity:.55':''}"><div><b>${esc(i.name)}</b>${i.imei ? `<br><small class="mut">IMEI/SN ${esc(i.imei)}</small>` : ''}</div><div class="b r">${money(i.qty * i.price - i.disc)}</div>
+<div class="qty">${i.dev ? '<small class="mut">1 device</small>' : `<button data-act="qtyM" data-id="${n}">−</button><input aria-label="Quantity in ${unit}" title="Enter e.g. 0.5 or 500g" data-in="lineQty" data-commit="change" data-n="${n}" type="text" inputmode="decimal" value="${i.qty}" style="width:76px;padding:3px 6px"><small class="mut">${unit}</small><button data-act="qtyP" data-id="${n}">+</button>`} <small class="mut">@/${unit}</small><input data-in="lprice" data-n="${n}" type="number" step="any" value="${i.price}" style="width:80px;padding:3px 6px"> <small class="mut">disc</small><input data-in="ldisc" data-n="${n}" type="number" value="${i.disc || ''}" style="width:60px;padding:3px 6px"></div>
+<div class="r"><button class="btn btn-s btn-d" data-act="rmLine" data-id="${n}">✕</button></div></div>`; }).join('') : '<div class="empty">Scan or tap a product to begin</div>';
   drawTots();
 }
 function drawTots() {
@@ -156,11 +168,11 @@ function addToCart(p, dev) {
   if (ex) ex.qty++; else pushLine(p, null);
   drawCart();
 }
-function pushLine(p, d) { cart.push({ pid: p.id, name: p.name, qty: 1, price: ps.cust && cust(ps.cust)?.type === 'Wholesale' && p.wholesale ? p.wholesale : p.price, disc: 0, cost: d && d.cost ? d.cost : p.cost, dev: d ? d.id : null, imei: d ? d.imei : '', warrantyM: p.warranty || 0 }); drawCart(); }
+function pushLine(p, d) { cart.push({ pid: p.id, name: p.name, unit: measureUnit(p), qty: 1, price: ps.cust && cust(ps.cust)?.type === 'Wholesale' && p.wholesale ? p.wholesale : p.price, disc: 0, cost: d && d.cost ? d.cost : p.cost, dev: d ? d.id : null, imei: d ? d.imei : '', warrantyM: p.warranty || 0 }); drawCart(); }
 A.pickDev = id => { const [pid, did] = id.split('|'), p = prod(pid); pushLine(p, p.devs.find(d => d.id === did)); closeTop(); $('#scan')?.focus(); };
 A.addProd = id => { addToCart(prod(id)); $('#scan')?.focus(); };
 A.qtyP = n => { const i = cart[+n], p = prod(i.pid), orig = ps.adjustmentId ? db.sales.find(s=>s.id===ps.adjustmentId)?.items.find(x=>x.pid===i.pid&&!x.dev)?.qty||0 : 0; if (i.qty + 1 > p.stock + orig) return toast('Not enough stock', 'err'); i.qty++; drawCart(); };
-A.qtyM = n => { const i = cart[+n], original = ps.adjustmentId ? db.sales.find(s=>s.id===ps.adjustmentId)?.items.find(x=>x.pid===i.pid&&!x.dev) : null; if (i.qty > 1) i.qty--; else if(original) i.qty=0; else cart.splice(+n, 1); drawCart(); };
+A.qtyM = n => { const i = cart[+n], original = ps.adjustmentId ? db.sales.find(s=>s.id===ps.adjustmentId)?.items.find(x=>x.pid===i.pid&&!x.dev) : null; if (i.qty > 1) i.qty--; else if (measureUnit(prod(i.pid)) !== 'each') i.qty=0; else if(original) i.qty=0; else cart.splice(+n, 1); drawCart(); };
 A.rmLine = n => { const i=cart[+n], original=ps.adjustmentId?db.sales.find(s=>s.id===ps.adjustmentId)?.items.some(x=>x.pid===i.pid&&x.dev===i.dev):false; if(original)i.qty=0; else cart.splice(+n, 1); drawCart(); };
 A.clearCart = async () => { if (cart.length && !(await confirmDlg('Clear the current bill?'))) return; cart = []; ps.a1 = ps.a2 = ''; ps.dVal = 0; P.pos(); };
 A.holdSale = () => { if (!cart.length) return; db.held.push({ id: uid(), at: nowISO(), cart, cust: ps.cust }); cart = []; save(); toast('Bill held'); P.pos(); };
@@ -175,6 +187,7 @@ I.adjustmentReason = v => { ps.adjustmentReason = v; };
 I.posPhone = v => { ps.customerPhone = v; syncCustomerDisplay(); }; I.posCustomerName = v => { ps.customerName = v; }; I.dval = v => { ps.dVal = num(v); drawTots(); }; I.dtype = v => { ps.dType = v; drawTots(); };
 I.m1 = v => { ps.m1 = v; }; I.m2 = v => { ps.m2 = v; }; I.a1 = v => { ps.a1 = v; drawTots(); }; I.a2 = v => { ps.a2 = v; drawTots(); };
 I.lprice = (v, el) => { cart[+el.dataset.n].price = num(v); drawTots(); }; I.ldisc = (v, el) => { cart[+el.dataset.n].disc = num(v); drawTots(); };
+I.lineQty = (v, el) => { const i=cart[+el.dataset.n], p=prod(i.pid), q=parseSaleQty(v,p); if (!Number.isFinite(q) || q <= 0) { el.value=String(i.qty); toast(`Enter a valid quantity in ${measureUnit(p)} (grams and millilitres are supported)`,'err'); return; } const other=cart.reduce((a,x,n)=>a+(n!==+el.dataset.n&&x.pid===i.pid&&!x.dev?x.qty:0),0), original=ps.adjustmentId?db.sales.find(s=>s.id===ps.adjustmentId)?.items.filter(x=>x.pid===i.pid&&!x.dev).reduce((a,x)=>a+num(x.qty),0)||0:0; if(q+other>p.stock+original){el.value=String(i.qty);toast(`Only ${p.stock+original-other} ${measureUnit(p)} available`,'err');return;} i.qty=q; el.value=String(q); drawTots(); };
 function scanned(code) {
   const c = code.trim(); if (!c) return;
   let p = db.products.find(x => x.active !== false && (x.barcode === c || x.sku === c));
@@ -190,6 +203,7 @@ A.completeSale = () => {
   if (pct > S().maxDiscountPct && me.role === 'cashier') return toast(`Discount ${pct.toFixed(1)}% exceeds limit (${S().maxDiscountPct}%). Manager approval needed.`, 'err');
   const need = {};
   for (const i of cart) { const p = prod(i.pid); if (!p) return toast('Product missing', 'err');
+    if (!Number.isFinite(i.qty) || i.qty <= 0 || (measureUnit(p) === 'each' && !Number.isInteger(i.qty))) return toast(`Enter a valid quantity for ${p.name}`, 'err');
     if (i.dev) { const d = p.devs.find(x => x.id === i.dev); if (!d || d.status !== 'in') return toast(`Device ${i.imei} is no longer available`, 'err'); }
     else { need[i.pid] = (need[i.pid] || 0) + i.qty; if (need[i.pid] > p.stock) return toast('Insufficient stock: ' + p.name, 'err'); } }
   const a2 = ps.m2 ? num(ps.a2) : 0, a1 = ps.a1 === '' ? Math.max(t.total - a2, 0) : num(ps.a1);
@@ -200,12 +214,12 @@ A.completeSale = () => {
   if (due > 0.005 && !c) return toast('Select a customer for credit / part payment', 'err');
   if (due > 0.005 && c.limit && (c.balance || 0) + due > c.limit) return toast('Customer credit limit exceeded', 'err');
   const s = { id: uid(), no: nextNo('sale', S().invPrefix), at: nowISO(), day: ymd(), user: me.name, customerId: c ? c.id : '', status: 'done',
-    items: cart.map(i => ({ pid: i.pid, name: i.name, qty: i.qty, price: i.price, disc: i.disc, cost: i.cost, dev: i.dev, imei: i.imei, warrantyM: i.warrantyM, returned: 0 })),
+    items: cart.map(i => ({ pid: i.pid, name: i.name, unit: i.unit || measureUnit(prod(i.pid)), qty: i.qty, price: i.price, disc: i.disc, cost: i.cost, dev: i.dev, imei: i.imei, warrantyM: i.warrantyM, returned: 0 })),
     itemsGross: t.gross, lineDisc: t.lineDisc, billDisc: t.billDisc, itemsNet: t.itemsNet, chargeLines: t.charges, tax: t.tax, total: t.total, paid, change, pays };
   const now = new Date();
   for (const i of s.items) { const p = prod(i.pid);
     if (i.dev) { const d = p.devs.find(x => x.id === i.dev); d.status = 'sold'; d.saleId = s.id; d.soldAt = s.at; d.warrantyEnd = i.warrantyM ? ymd(new Date(now.getFullYear(), now.getMonth() + i.warrantyM, now.getDate())) : ''; recount(p); }
-    else p.stock -= i.qty;
+    else p.stock = Math.round((p.stock - i.qty) * 1000000) / 1000000;
     move(p, -i.qty, 'sale', s.no); }
   if (c && due > 0) c.balance = r2((c.balance || 0) + due);
   db.sales.push(s); const sourceQuote = db.quotations?.find(q => q.status === 'accepted' && q.customerId === s.customerId && q.items.length === s.items.length && q.items.every((qi, n) => qi.pid === s.items[n].pid && num(qi.qty) === num(s.items[n].qty) && r2(Math.max(num(prod(qi.pid)?.price) - num(qi.price), 0) * num(qi.qty)) === r2(num(s.items[n].disc)))); if (sourceQuote) { sourceQuote.status = 'converted'; sourceQuote.saleId = s.id; sourceQuote.convertedAt = s.at; } log('sale', s.no + ' ' + money(s.total)); save();
@@ -236,7 +250,7 @@ A.adjustSale = id => {
   if (cart.length) return toast('Finish or hold the current bill before adjusting another bill', 'err');
   closeTop(); ps.adjustmentId=id; ps.adjustmentReason=''; ps.adjustmentCustomerPending=false; ps.cust=s.customerId||''; ps.customerReady=!!cust(ps.cust); ps.customerPhone=cust(ps.cust)?.phone||''; ps.phonePadOpen=false;
   ps.q=''; ps.cat=''; ps.dType='amt'; ps.dVal=num(s.billDisc); ps.a1=''; ps.a2=''; ps.m1=s.pays?.find(p=>p.method!=='Credit')?.method||'Cash'; ps.m2='';
-  cart=s.items.map(i=>({pid:i.pid,name:i.name,qty:num(i.qty),price:num(i.price),disc:num(i.disc),cost:num(i.cost),dev:i.dev||null,imei:i.imei||'',warrantyM:num(i.warrantyM),returned:num(i.returned)}));
+  cart=s.items.map(i=>({pid:i.pid,name:i.name,unit:i.unit||measureUnit(prod(i.pid)),qty:num(i.qty),price:num(i.price),disc:num(i.disc),cost:num(i.cost),dev:i.dev||null,imei:i.imei||'',warrantyM:num(i.warrantyM),returned:num(i.returned)}));
   nav('pos');
 };
 A.cancelSaleAdjustment = async () => { if(cart.length&&!(await confirmDlg('Cancel this bill adjustment?')))return; cart=[]; ps.adjustmentId='';ps.adjustmentReason='';ps.cust='';ps.customerReady=false;ps.customerPhone='';ps.dVal=0;ps.a1=ps.a2='';nav('sales'); };
@@ -244,7 +258,7 @@ A.completeSaleAdjustment = id => {
   const s=db.sales.find(x=>x.id===ps.adjustmentId); if(!s||s.status!=='done'||s.items.some(i=>i.returned))return toast('This bill can no longer be adjusted','err');
   const reason=String(ps.adjustmentReason||'').trim();
   const original=s.items.map(i=>({...i})), revised=cart.filter(i=>i.qty>0).map(i=>({...i,returned:num(i.returned||0)}));
-  if(!revised.length||revised.some(i=>!Number.isInteger(i.qty)||i.qty<0||!prod(i.pid)))return toast('Keep at least one valid product and use whole item quantities','err');
+  if(!revised.length||revised.some(i=>i.qty<0||!Number.isFinite(i.qty)||!prod(i.pid)||(measureUnit(prod(i.pid))==='each'&&!Number.isInteger(i.qty))))return toast('Keep at least one valid product and use valid quantities','err');
   const oldCounts={},newCounts={}; original.forEach(i=>{if(!i.dev)oldCounts[i.pid]=(oldCounts[i.pid]||0)+num(i.qty);}); revised.forEach(i=>{if(!i.dev)newCounts[i.pid]=(newCounts[i.pid]||0)+num(i.qty);});
   for(const pid of new Set([...Object.keys(oldCounts),...Object.keys(newCounts)])){const p=prod(pid),delta=(newCounts[pid]||0)-(oldCounts[pid]||0); if(delta>p.stock)return toast(`Only ${p.stock} additional ${p.name} in stock`,'err');}
   const t=posTotals(), oldDue=r2(Math.max(0,num(s.total)-num(s.paid))), newDue=r2(Math.max(0,t.total-num(s.paid))), dueDelta=r2(newDue-oldDue), customer=cust(s.customerId);
@@ -256,7 +270,7 @@ A.completeSaleAdjustment = id => {
     if(!original.some(old=>old.dev===i.dev))return toast(`Device ${i.imei||i.dev} was not on the original invoice`,'err');
   }
   for(const i of removedDevices){const p=prod(i.pid),d=p?.devs.find(x=>x.id===i.dev);if(!d||d.status!=='sold'||d.saleId!==s.id)return toast(`Device ${i.imei||i.dev} is no longer assigned to this invoice`,'err');}
-  s.items=revised.map(i=>({pid:i.pid,name:i.name,qty:i.qty,price:i.price,disc:i.disc,cost:i.cost,dev:i.dev,imei:i.imei,warrantyM:i.warrantyM,returned:i.returned||0}));
+  s.items=revised.map(i=>({pid:i.pid,name:i.name,unit:i.unit||measureUnit(prod(i.pid)),qty:i.qty,price:i.price,disc:i.disc,cost:i.cost,dev:i.dev,imei:i.imei,warrantyM:i.warrantyM,returned:i.returned||0}));
   s.itemsGross=t.gross;s.lineDisc=t.lineDisc;s.billDisc=t.billDisc;s.itemsNet=t.itemsNet;s.chargeLines=t.charges;s.tax=t.tax;s.total=t.total;
   for(const [pid,delta] of Object.entries(stockDeltas)){const p=prod(pid);if(delta){p.stock+=delta;move(p,-delta,'adjustment',s.no,reason);}}
   for(const i of removedDevices){const p=prod(i.pid),d=p.devs.find(x=>x.id===i.dev);d.status='in';d.saleId='';d.soldAt='';d.warrantyEnd='';recount(p);move(p,1,'adjustment',s.no,reason||`Serialized device ${i.imei||i.dev} removed from bill`);}
@@ -273,13 +287,13 @@ A.voidSale = async id => {
 };
 A.returnSale = id => {
   const s = db.sales.find(x => x.id === id); closeTop();
-  const rows = s.items.map((i, n) => { const max = i.qty - (i.returned || 0); return `<tr><td>${esc(i.name)}${i.imei ? `<br><small>${esc(i.imei)}</small>` : ''}</td><td>${max}</td><td><input name="q${n}" type="number" min="0" max="${max}" value="0" style="width:70px" ${max ? '' : 'disabled'}></td><td><label><input type="checkbox" name="r${n}" checked> restock</label></td></tr>`; }).join('');
+  const rows = s.items.map((i, n) => { const max = i.qty - (i.returned || 0), u=measureUnit(prod(i.pid)); return `<tr><td>${esc(i.name)}${i.imei ? `<br><small>${esc(i.imei)}</small>` : ''}</td><td>${max} ${u}</td><td><input name="q${n}" type="number" min="0" step="${u==='each'?'1':'any'}" max="${max}" value="0" style="width:70px" ${max ? '' : 'disabled'}></td><td><label><input type="checkbox" name="r${n}" checked> restock</label></td></tr>`; }).join('');
   const ov = modal('Return – ' + s.no, `<form><div class="tw"><table><thead><tr><th>Item</th><th>Returnable</th><th>Return qty</th><th>Condition</th></tr></thead><tbody>${rows}</tbody></table></div><br><div class="fg"><label class="f"><span>Refund method</span><select name="rm">${methods().concat(['Reduce customer balance']).map(m => `<option>${esc(m)}</option>`).join('')}</select></label><label class="f"><span>Reason</span><input name="reason" value="Customer return"></label></div><p class="mut sm">Un-tick "restock" for defective items; they will NOT return to sellable stock.</p></form>`, `<button class="btn" data-act="closeModal">Cancel</button><button class="btn btn-p" data-act="doReturn" data-id="${id}">Process return</button>`);
 };
 A.doReturn = (id, el) => {
   const s = db.sales.find(x => x.id === id), f = el.closest('.ov').querySelector('form'), items = []; let refund = 0;
   const ratio = s.itemsNet ? s.total / s.itemsNet : 1;
-  s.items.forEach((i, n) => { const q = num(f.elements['q' + n]?.value); if (q <= 0) return; if (q > i.qty - (i.returned || 0)) return; const amt = r2((i.qty * i.price - i.disc) / i.qty * q * ratio); refund += amt; items.push({ n, pid: i.pid, name: i.name, qty: q, amount: amt, cost: i.cost, dev: i.dev, imei: i.imei, restock: f.elements['r' + n].checked }); });
+  s.items.forEach((i, n) => { const q = num(f.elements['q' + n]?.value); if (q <= 0 || q > i.qty - (i.returned || 0) || (measureUnit(prod(i.pid)) === 'each' && !Number.isInteger(q))) return; const amt = r2((i.qty * i.price - i.disc) / i.qty * q * ratio); refund += amt; items.push({ n, pid: i.pid, name: i.name, qty: q, amount: amt, cost: i.cost, dev: i.dev, imei: i.imei, restock: f.elements['r' + n].checked }); });
   if (!items.length) return toast('Enter a quantity to return', 'err');
   refund = r2(refund); const tax = s.total ? r2(refund * s.tax / s.total) : 0, method = f.elements.rm.value;
   items.forEach(it => { const si = s.items[it.n], p = prod(it.pid); si.returned = (si.returned || 0) + it.qty;
@@ -303,7 +317,7 @@ function drawProducts() {
     (pf.st === 'low' ? stockOf(p) <= (p.min ?? S().lowStock) && stockOf(p) > 0 : pf.st === 'out' ? stockOf(p) <= 0 : true) &&
     (!q || (p.name + p.sku + p.barcode + (p.brand || '') + (p.model || '') + p.devs.map(d => d.imei + d.imei2).join()).toLowerCase().includes(q)));
   const shown = l.slice(0, 300);
-  $('#list').innerHTML = `<p class="mut">${l.length} products · ${picked.size} selected</p>` + tbl(['!<input type="checkbox" data-in="pickAll" aria-label="Select all filtered products" title="Select all filtered products">', 'Product', 'Category', 'Barcode', '>Cost', '>Price', '>Stock', ''], shown.map(p => `<tr><td><input type="checkbox" data-in="pick" data-n="${p.id}" ${picked.has(p.id) ? 'checked' : ''}></td><td><b>${esc(p.name)}</b><br><small class="mut">${esc(p.brand || '')} ${esc(p.model || '')} · ${esc(p.sku)}</small></td><td>${esc(p.category || '')}</td><td>${esc(p.barcode)}</td><td class="r">${money(p.cost)}</td><td class="r">${money(p.price)}</td><td class="r"><span class="badge ${stockOf(p) <= 0 ? 'b-bad' : stockOf(p) <= (p.min ?? S().lowStock) ? 'b-warn' : 'b-ok'}">${stockOf(p)}</span></td><td class="r" style="white-space:nowrap">${p.tracked ? `<button class="btn btn-s" data-act="devices" data-id="${p.id}">IMEI</button> ` : ''}<button class="btn btn-s" data-act="hist" data-id="${p.id}">History</button> <button class="btn btn-s" data-act="editProd" data-id="${p.id}">Edit</button> <button class="btn btn-s" data-act="dupProd" data-id="${p.id}">Copy</button> <button class="btn btn-s btn-d" data-act="delProd" data-id="${p.id}">Delete</button> <button class="btn btn-s btn-d" data-act="archProd" data-id="${p.id}">${p.active === false ? 'Restore' : 'Archive'}</button></td></tr>`));
+  $('#list').innerHTML = `<p class="mut">${l.length} products · ${picked.size} selected</p>` + tbl(['!<input type="checkbox" data-in="pickAll" aria-label="Select all filtered products" title="Select all filtered products">', 'Product', 'Category', 'Barcode', '>Cost', '>Price', '>Stock', ''], shown.map(p => `<tr><td><input type="checkbox" data-in="pick" data-n="${p.id}" ${picked.has(p.id) ? 'checked' : ''}></td><td><b>${esc(p.name)}</b><br><small class="mut">${esc(p.brand || '')} ${esc(p.model || '')} · ${esc(p.sku)}</small></td><td>${esc(p.category || '')}</td><td>${esc(p.barcode)}</td><td class="r">${money(p.cost)}</td><td class="r">${money(p.price)} / ${measureUnit(p)}</td><td class="r"><span class="badge ${stockOf(p) <= 0 ? 'b-bad' : stockOf(p) <= (p.min ?? S().lowStock) ? 'b-warn' : 'b-ok'}">${stockOf(p)} ${measureUnit(p)}</span></td><td class="r" style="white-space:nowrap">${p.tracked ? `<button class="btn btn-s" data-act="devices" data-id="${p.id}">IMEI</button> ` : ''}<button class="btn btn-s" data-act="hist" data-id="${p.id}">History</button> <button class="btn btn-s" data-act="editProd" data-id="${p.id}">Edit</button> <button class="btn btn-s" data-act="dupProd" data-id="${p.id}">Copy</button> <button class="btn btn-s btn-d" data-act="delProd" data-id="${p.id}">Delete</button> <button class="btn btn-s btn-d" data-act="archProd" data-id="${p.id}">${p.active === false ? 'Restore' : 'Archive'}</button></td></tr>`));
   const selectAll = $('#list [data-in="pickAll"]');
   if (selectAll) {
     const selectedCount = l.filter(p => picked.has(p.id)).length;
@@ -325,10 +339,15 @@ I.pickAll = v => {
 const prodFields = (p = {}) => [
   { k: 'name', l: 'Product name', v: p.name, req: 1, cls: 'full' }, { k: 'brand', l: 'Brand', t: 'select', v: p.brand, o: ['', ...db.brands] }, { k: 'category', l: 'Category', t: 'select', v: p.category, o: ['', ...db.categories] },
   { k: 'model', l: 'Model / Variant (e.g. 8GB/256GB Black)', v: p.model }, { k: 'sku', l: 'SKU (blank = auto)', v: p.sku }, { k: 'barcode', l: 'Barcode (blank = auto)', v: p.barcode },
-  { k: 'cost', l: 'Cost price', t: 'number', v: p.cost ?? 0 }, { k: 'price', l: 'Selling price', t: 'number', v: p.price ?? 0, req: 1 }, { k: 'wholesale', l: 'Wholesale price', t: 'number', v: p.wholesale ?? 0 }, { k: 'minPrice', l: 'Minimum selling price', t: 'number', v: p.minPrice ?? 0 },
-  ...(p.id ? [] : [{ k: 'stock', l: 'Opening stock (non-IMEI items)', t: 'number', v: 0 }]), { k: 'min', l: 'Low-stock level', t: 'number', v: p.min ?? S().lowStock }, { k: 'warranty', l: 'Warranty (months)', t: 'number', v: p.warranty ?? 0 },
+  { k: 'unit', l: 'Sell and stock unit', t: 'select', v: p.unit || 'each', o: [['each', 'Each (whole items)'], ['kg', 'Kilogram (price and stock per kg)'], ['L', 'Litre (price and stock per L)']] },
+  { k: 'cost', l: 'Cost price (per selected unit)', t: 'number', v: p.cost ?? 0 }, { k: 'price', l: 'Selling price (per selected unit)', t: 'number', v: p.price ?? 0, req: 1 }, { k: 'wholesale', l: 'Wholesale price (per selected unit)', t: 'number', v: p.wholesale ?? 0 }, { k: 'minPrice', l: 'Minimum selling price', t: 'number', v: p.minPrice ?? 0 },
+  ...(p.id ? [] : [{ k: 'stock', l: 'Opening stock (in selected unit)', t: 'number', v: 0 }]), { k: 'min', l: 'Low-stock level (selected unit)', t: 'number', v: p.min ?? S().lowStock }, { k: 'warranty', l: 'Warranty (months)', t: 'number', v: p.warranty ?? 0 },
   { k: 'tracked', l: 'Track by IMEI / serial number (phones, watches)', t: 'checkbox', v: p.tracked, cls: 'full' }, { k: 'notes', l: 'Notes', t: 'textarea', v: p.notes, cls: 'full' }];
 function saveProduct(p, v) {
+  if (!['each', 'kg', 'L'].includes(v.unit)) return 'Choose a valid stock unit';
+  if (v.tracked && v.unit !== 'each') return 'IMEI/serial tracked products must use Each';
+  if (p.id && (p.unit || 'each') !== v.unit && (stockOf(p) !== 0 || db.sales.some(s => s.items.some(i => i.pid === p.id)))) return 'This product has stock or sales history. Create a new product to use a different unit.';
+  if (v.unit === 'each' && (!Number.isInteger(num(v.min)) || (!p.id && !Number.isInteger(num(v.stock))))) return 'Each-unit stock quantities must be whole numbers';
   if (v.price < v.cost && !confirm_warn) { }
   const dup = db.products.find(x => x.id !== p.id && v.barcode && x.barcode === v.barcode); if (dup) return 'Barcode already used by ' + dup.name;
   const dupS = db.products.find(x => x.id !== p.id && v.sku && x.sku === v.sku); if (dupS) return 'SKU already used by ' + dupS.name;
@@ -382,16 +401,17 @@ A.delList = async id => {
   if (field && used) db.products.forEach(p => { if (p[field] === value) p[field] = ''; });
   db[k].splice(index, 1); log('list remove', `${k}: ${value}`); save(); closeTop(); A.manageLists();
 };
-A.expProd = () => download('products.csv', toCSV([['name', 'sku', 'barcode', 'category', 'brand', 'model', 'cost', 'price', 'stock', 'min', 'tracked'], ...db.products.map(p => [p.name, p.sku, p.barcode, p.category, p.brand, p.model, p.cost, p.price, stockOf(p), p.min, p.tracked ? 1 : 0])]));
+A.expProd = () => download('products.csv', toCSV([['name', 'sku', 'barcode', 'category', 'brand', 'model', 'cost', 'price', 'stock', 'min', 'tracked', 'unit'], ...db.products.map(p => [p.name, p.sku, p.barcode, p.category, p.brand, p.model, p.cost, p.price, stockOf(p), p.min, p.tracked ? 1 : 0, p.unit || 'each'])]));
 A.impProd = () => {
-  modal('Import products (CSV)', `<p>Columns: <code>name,sku,barcode,category,brand,model,cost,price,stock,min,tracked</code>. Existing barcodes/SKUs are skipped, nothing is overwritten.</p>`, `<button class="btn" data-act="tplProd">Download template</button><button class="btn btn-p" data-act="pickProdCSV">Choose CSV file</button>`);
+  modal('Import products (CSV)', `<p>Columns: <code>name,sku,barcode,category,brand,model,cost,price,stock,min,tracked,unit</code>. Unit can be each, kg, or L. Existing barcodes/SKUs are skipped, nothing is overwritten.</p>`, `<button class="btn" data-act="tplProd">Download template</button><button class="btn btn-p" data-act="pickProdCSV">Choose CSV file</button>`);
 };
-A.tplProd = () => download('products_template.csv', toCSV([['name', 'sku', 'barcode', 'category', 'brand', 'model', 'cost', 'price', 'stock', 'min', 'tracked'], ['Samsung Charger 25W', '', '', 'Chargers', 'Samsung', '25W', 1200, 1990, 10, 3, 0]]));
+A.tplProd = () => download('products_template.csv', toCSV([['name', 'sku', 'barcode', 'category', 'brand', 'model', 'cost', 'price', 'stock', 'min', 'tracked', 'unit'], ['Samsung Charger 25W', '', '', 'Chargers', 'Brand', '25W', 1200, 1990, 10, 3, 0, 'each'], ['Rice', '', '', 'Groceries', '', '', 250, 350, 20, 2, 0, 'kg']]));
 A.pickProdCSV = () => pickFile('.csv', txt => {
   const rows = parseCSV(txt), h = rows.shift().map(x => x.trim().toLowerCase()), g = (r, k) => (r[h.indexOf(k)] || '').trim(); let ok = 0; const errs = [];
   rows.forEach((r, i) => { const name = g(r, 'name'); if (!name) return errs.push(`Row ${i + 2}: no name`);
     const bc = g(r, 'barcode'), sk = g(r, 'sku'); if ((bc && db.products.some(p => p.barcode === bc)) || (sk && db.products.some(p => p.sku === sk))) return errs.push(`Row ${i + 2}: duplicate barcode/SKU – skipped`);
-    const p = { id: uid(), name, sku: sk, barcode: bc, category: g(r, 'category'), brand: g(r, 'brand'), model: g(r, 'model'), cost: num(g(r, 'cost')), price: num(g(r, 'price')), min: g(r, 'min') === '' ? S().lowStock : num(g(r, 'min')), tracked: ['1', 'true', 'yes'].includes(g(r, 'tracked').toLowerCase()), devs: [], stock: 0, active: true, created: nowISO() };
+    const unit = g(r, 'unit') || 'each', tracked = ['1', 'true', 'yes'].includes(g(r, 'tracked').toLowerCase()); if (!['each', 'kg', 'L'].includes(unit) || (tracked && unit !== 'each')) return errs.push(`Row ${i + 2}: unsupported unit for product – skipped`);
+    const p = { id: uid(), name, sku: sk, barcode: bc, category: g(r, 'category'), brand: g(r, 'brand'), model: g(r, 'model'), cost: num(g(r, 'cost')), price: num(g(r, 'price')), min: g(r, 'min') === '' ? S().lowStock : num(g(r, 'min')), unit, tracked, devs: [], stock: 0, active: true, created: nowISO() };
     if (!p.sku) { db.counters.sku++; p.sku = 'SKU' + String(db.counters.sku).padStart(5, '0'); } if (!p.barcode) p.barcode = newBarcode();
     if (g(r, 'category') && !db.categories.includes(p.category)) db.categories.push(p.category); if (p.brand && !db.brands.includes(p.brand)) db.brands.push(p.brand);
     if (!p.tracked && num(g(r, 'stock')) > 0) { p.stock = num(g(r, 'stock')); move(p, p.stock, 'opening', '', 'CSV import'); } db.products.push(p); ok++; });
@@ -449,7 +469,7 @@ P.inventory = () => {
 };
 function drawInv() { const q = invf.q.toLowerCase();
   const l = db.products.filter(p => p.active !== false && (!q || (p.name + p.sku + p.barcode).toLowerCase().includes(q)) && (invf.st === 'low' ? stockOf(p) > 0 && stockOf(p) <= (p.min ?? S().lowStock) : invf.st === 'out' ? stockOf(p) <= 0 : true));
-  $('#list').innerHTML = tbl(['Product', '>Stock', '>Min', '>Cost', '>Value', ''], l.slice(0, 300).map(p => `<tr><td>${esc(p.name)}</td><td class="r">${stockOf(p)}</td><td class="r">${p.min ?? S().lowStock}</td><td class="r">${money(p.cost)}</td><td class="r">${money(stockOf(p) * p.cost)}</td><td class="r">${p.tracked ? '<span class="mut sm">via IMEI</span>' : `<button class="btn btn-s" data-act="adjust" data-id="${p.id}">Adjust</button>`}</td></tr>`)); }
+  $('#list').innerHTML = tbl(['Product', '>Stock', '>Min', '>Cost', '>Value', ''], l.slice(0, 300).map(p => `<tr><td>${esc(p.name)}</td><td class="r">${stockOf(p)} ${measureUnit(p)}</td><td class="r">${p.min ?? S().lowStock} ${measureUnit(p)}</td><td class="r">${money(p.cost)} / ${measureUnit(p)}</td><td class="r">${money(stockOf(p) * p.cost)}</td><td class="r">${p.tracked ? '<span class="mut sm">via IMEI</span>' : `<button class="btn btn-s" data-act="adjust" data-id="${p.id}">Adjust</button>`}</td></tr>`)); }
 I.iq = v => { invf.q = v; drawInv(); }; I.ist = v => { invf.st = v; drawInv(); };
 A.adjust = id => { const p = prod(id); formModal('Adjust stock – ' + p.name, [{ k: 'qty', l: 'Change (+ add / − remove)', t: 'number', v: 0 }, { k: 'type', l: 'Reason', t: 'select', o: ['Correction', 'Damaged', 'Lost', 'Found', 'Expired/Obsolete', 'Other'] }, { k: 'note', l: 'Note', cls: 'full' }], v => {
   if (!v.qty) return 'Enter a quantity'; if (p.stock + v.qty < 0) return 'Cannot go below zero'; p.stock += v.qty; move(p, v.qty, 'adjust:' + v.type, '', v.note); log('stock adjust', `${p.name} ${v.qty} (${v.type})`); save(); P.inventory(); }); };
