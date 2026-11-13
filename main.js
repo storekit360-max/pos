@@ -653,12 +653,17 @@ ipcMain.handle('auth:recover-password', (_event, recoveryKey, username, newPassw
   if (!user) return { ok: false, error: 'Active username not found' };
   user.hash = crypto.createHash('sha256').update(user.username + ':' + password).digest('hex');
   const tmp = f + '.tmp';
-  const serialized = JSON.stringify(data);
-  JSON.parse(serialized);
-  fs.writeFileSync(tmp, serialized);
-  if (fs.existsSync(f)) fs.copyFileSync(f, f + '.prev');
-  try { fs.renameSync(tmp, f); }
-  catch (e) { fs.rmSync(tmp, { force: true }); throw e; }
+  try {
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    const serialized = JSON.stringify(data);
+    JSON.parse(serialized);
+    fs.writeFileSync(tmp, serialized);
+    if (fs.existsSync(f)) fs.copyFileSync(f, f + '.prev');
+    fs.renameSync(tmp, f);
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch (_) {}
+    throw new Error(`Password reset could not be saved. No data was changed. ${e.message}`);
+  }
   return { ok: true };
 });
 ipcMain.handle('db:load', () => {

@@ -92,7 +92,7 @@ function loginScreen() {
   if (!LIVE_WEB && window.posApi) {
     const recoveryForm = $('#recoveryForm');
     $('#showRecovery').onclick = () => { recoveryForm.hidden = !recoveryForm.hidden; };
-    recoveryForm.onsubmit = async e => { e.preventDefault(); const f = e.target.elements; if (f.password.value !== f.confirm.value) return toast('Passwords do not match', 'err'); try { const result = await window.posApi.recoverPassword(f.key.value, f.username.value, f.password.value); if (!result.ok) return toast(result.error, 'err'); e.target.reset(); e.target.hidden = true; toast('Password reset. Sign in with your new password.'); } catch (_) { toast('Password reset failed. No data was changed.', 'err'); } };
+    recoveryForm.onsubmit = async e => { e.preventDefault(); const f = e.target.elements; if (f.password.value !== f.confirm.value) return toast('Passwords do not match', 'err'); try { const result = await window.posApi.recoverPassword(f.key.value, f.username.value, f.password.value); if (!result?.ok) return toast(result?.error || 'Password reset failed. No data was changed.', 'err'); e.target.reset(); e.target.hidden = true; toast('Password reset. Sign in with your new password.'); } catch (error) { toast(error?.message || 'Password reset failed. No data was changed.', 'err'); } };
   }
   $('#lf').onsubmit = async e => { e.preventDefault();
     if (!startupReady) return toast('Starting POS… please wait a moment.', 'err');
